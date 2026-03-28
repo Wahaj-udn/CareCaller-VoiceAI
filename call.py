@@ -11,6 +11,9 @@ Environment variables supported:
     CALL_TO_NUMBER
     CALL_FROM_NUMBER
     OUTBOUND_TWIML_URL
+    RECORD_CALLS
+    RECORDING_STATUS_CALLBACK_URL
+    WEBHOOK_BASE_URL
 """
 
 from __future__ import annotations
@@ -25,6 +28,22 @@ from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
 
 load_dotenv()
+
+
+def _is_truthy(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _default_recording_callback_url() -> str:
+    explicit = os.getenv("RECORDING_STATUS_CALLBACK_URL", "").strip()
+    if explicit:
+        return explicit
+
+    base_url = os.getenv("WEBHOOK_BASE_URL", "").strip().rstrip("/")
+    if base_url:
+        return f"{base_url}/voice/recording"
+
+    return ""
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,6 +81,16 @@ def parse_args() -> argparse.Namespace:
         default=os.getenv("TWILIO_AUTH_TOKEN", ""),
         help="Twilio Auth Token (default: TWILIO_AUTH_TOKEN env var).",
     )
+    parser.add_argument(
+        "--record",
+        default=os.getenv("RECORD_CALLS", "true"),
+        help="Enable Twilio call recording (default: RECORD_CALLS env var or true).",
+    )
+    parser.add_argument(
+        "--recording-status-callback",
+        default=_default_recording_callback_url(),
+        help="Public callback URL that receives Twilio recording events.",
+    )
     return parser.parse_args()
 
 
@@ -93,6 +122,14 @@ def place_call(args: argparse.Namespace) -> str:
         # Twilio supports inline TwiML through `twiml`.
         safe_message = args.say.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         create_kwargs["twiml"] = f"<Response><Say>{safe_message}</Say></Response>"
+
+    if _is_truthy(str(args.record)):
+        create_kwargs["record"] = True
+        create_kwargs["recording_channels"] = "mono"
+        create_kwargs["recording_status_callback_event"] = ["completed"]
+        if args.recording_status_callback:
+            create_kwargs["recording_status_callback"] = args.recording_status_callback
+            create_kwargs["recording_status_callback_method"] = "POST"
 
     call = client.calls.create(**create_kwargs)
     return call.sid

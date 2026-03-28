@@ -29,6 +29,9 @@ to Gemini Live and Gemini audio is streamed back to the caller.
 - `CALL_TO_NUMBER` (default destination for `call.py`)
 - `CALL_FROM_NUMBER` (default Twilio source number for `call.py`)
 - `OUTBOUND_TWIML_URL` (default TwiML URL for `call.py`)
+- `RECORD_CALLS` (default `true`)
+- `RECORDING_STATUS_CALLBACK_URL` (example: `https://<webhook-host>/voice/recording`)
+- `RECORDINGS_DIR` (default: `recordings`)
 
 ## Run flow
 1. Start `gemini_bridge.py` (WebSocket server).
@@ -46,6 +49,15 @@ to Gemini Live and Gemini audio is streamed back to the caller.
 - `POST /voice/incoming`
 - `POST /voice/outbound`
 - `POST /voice/events`
+- `POST /voice/recording` (Twilio recording callback; downloads MP3 locally)
+
+## Call recording download (MP3)
+- `call.py` now requests Twilio recording by default (`RECORD_CALLS=true`).
+- When Twilio sends `RecordingStatus=completed` to `/voice/recording`, `server.py` downloads
+	`RecordingUrl + .mp3` with Twilio HTTP Basic auth.
+- Saved file format:
+	- `recordings/<UTC_TIMESTAMP>_<CallSid>_<RecordingSid>.mp3`
+- If a filename already exists, download is skipped.
 
 ## Bridge behavior in `gemini_bridge.py`
 - Receives Twilio μ-law 8k audio

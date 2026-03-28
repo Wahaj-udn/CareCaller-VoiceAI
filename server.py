@@ -6,23 +6,53 @@ Endpoints:
 - POST /voice/incoming
 - POST /voice/outbound
 - POST /voice/events
+- POST /voice/recording
 
 Environment variables:
 - PORT (default: 5000)
 - HOST (default: 0.0.0.0)
 - MEDIA_STREAM_URL (optional): wss://... endpoint that receives Twilio media stream
+- RECORDINGS_DIR (default: recordings)
+- TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN (required to download recording MP3)
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
+import datetime as dt
 import os
+from pathlib import Path
+import re
+from urllib import error as urlerror
+from urllib import request as urlrequest
 
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request
 from twilio.twiml.voice_response import Connect, VoiceResponse
 
 load_dotenv()
+
+
+def _safe_token(value: str, fallback: str = "unknown") -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", (value or "").strip())
+    return cleaned or fallback
+
+
+def _download_recording_mp3(recording_url: str, output_file: Path, account_sid: str, auth_token: str) -> None:
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    auth_bytes = f"{account_sid}:{auth_token}".encode("utf-8")
+    auth_header = base64.b64encode(auth_bytes).decode("ascii")
+    req = urlrequest.Request(
+        recording_url,
+        headers={"Authorization": f"Basic {auth_header}"},
+        method="GET",
+    )
+
+    with urlrequest.urlopen(req, timeout=30) as response:
+        content = response.read()
+    output_file.write_bytes(content)
 
 
 def create_app() -> Flask:
@@ -47,6 +77,62 @@ def create_app() -> Flask:
         call_sid = event.get("CallSid", "unknown")
         status = event.get("CallStatus") or event.get("StreamEvent") or "unknown"
         app.logger.info("voice_event call_sid=%s status=%s", call_sid, status)
+        return ("", 204)
+
+    @app.post("/voice/recording")
+    @app.post("/voice/recording/")
+    def recording_events() -> Response:
+        event = dict(request.form)
+        call_sid = event.get("CallSid", "unknown")
+        recording_sid = event.get("RecordingSid", "unknown")
+        recording_status = (event.get("RecordingStatus") or "").strip().lower()
+        recording_url_base = (event.get("RecordingUrl") or "").strip()
+
+        app.logger.info(
+            "recording_event call_sid=%s recording_sid=%s status=%s",
+            call_sid,
+            recording_sid,
+            recording_status or "unknown",
+        )
+
+        if recording_status != "completed":
+            return ("", 204)
+
+        if not recording_url_base:
+            app.logger.warning("recording_event missing RecordingUrl for call_sid=%s", call_sid)
+            return ("missing RecordingUrl", 400)
+
+        account_sid = os.getenv("TWILIO_ACCOUNT_SID", "").strip()
+        auth_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
+        if not account_sid or not auth_token:
+            app.logger.error("Cannot download recording: Twilio credentials are not configured")
+            return ("twilio credentials not configured", 500)
+
+        recordings_dir = Path(os.getenv("RECORDINGS_DIR", "recordings")).resolve()
+        timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        safe_call_sid = _safe_token(call_sid, fallback="call")
+        safe_recording_sid = _safe_token(recording_sid, fallback="recording")
+        filename = f"{timestamp}_{safe_call_sid}_{safe_recording_sid}.mp3"
+        output_file = recordings_dir / filename
+
+        if output_file.exists():
+            app.logger.info("Recording already exists, skipping download: %s", output_file)
+            return ("", 204)
+
+        recording_url_mp3 = f"{recording_url_base}.mp3"
+
+        try:
+            _download_recording_mp3(
+                recording_url=recording_url_mp3,
+                output_file=output_file,
+                account_sid=account_sid,
+                auth_token=auth_token,
+            )
+            app.logger.info("Saved call recording to %s", output_file)
+        except (urlerror.URLError, TimeoutError, OSError) as exc:
+            app.logger.error("Failed to download recording sid=%s: %s", recording_sid, exc)
+            return ("failed to download recording", 502)
+
         return ("", 204)
 
     return app

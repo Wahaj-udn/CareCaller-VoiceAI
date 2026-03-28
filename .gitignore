@@ -30,3 +30,6 @@ Thumbs.db
 
 # Runtime generated conversation transcript
 conversation.txt
+
+# Runtime call recordings
+recordings/*.mp3
