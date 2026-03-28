@@ -22,6 +22,7 @@ import argparse
 import asyncio
 import audioop
 import base64
+import datetime as dt
 import json
 import logging
 import os
@@ -54,6 +55,7 @@ class StreamState:
     stream_sid: str = ""
     call_sid: str = ""
     model_is_speaking: bool = False
+    conversation_file: str = ""
 
 
 def _parse_sample_rate(mime_type: Optional[str], default: int) -> int:
@@ -122,6 +124,8 @@ class BridgeService:
         self._kickoff_prompt = kickoff_prompt
         self._interrupt_rms_threshold = interrupt_rms_threshold
         self._conversation_log_file = os.getenv("CONVERSATION_LOG_FILE", "conversation.txt").strip() or "conversation.txt"
+        self._conversation_dir = Path(os.getenv("CONVERSATION_DIR", "conversation")).resolve()
+        self._conversation_per_call = self._is_truthy(os.getenv("CONVERSATION_PER_CALL", "true"))
         self._conversation_log_lock = asyncio.Lock()
 
     @staticmethod
@@ -203,8 +207,12 @@ class BridgeService:
                 start = message.get("start", {})
                 state.stream_sid = start.get("streamSid", "")
                 state.call_sid = start.get("callSid", "")
+                state.conversation_file = self._build_conversation_file_path(state.call_sid)
                 LOGGER.info("Stream started call_sid=%s stream_sid=%s", state.call_sid, state.stream_sid)
-                await self._append_conversation_line(f"\n# call_sid={state.call_sid or 'unknown'}")
+                await self._append_conversation_line(
+                    f"# call_sid={state.call_sid or 'unknown'}",
+                    conversation_file=state.conversation_file,
+                )
                 continue
 
             if event == "media":
@@ -242,7 +250,7 @@ class BridgeService:
             if content.input_transcription and content.input_transcription.text:
                 # Log caller speech as soon as transcript text arrives to avoid
                 # waiting for finalization and appearing "late" in logs.
-                await self._emit_transcript("user", content.input_transcription.text)
+                await self._emit_transcript("user", content.input_transcription.text, state)
 
             if content.output_transcription and content.output_transcription.text:
                 gemini_buffer = self._append_transcript(gemini_buffer, content.output_transcription.text)
@@ -271,12 +279,12 @@ class BridgeService:
             if content.interrupted or content.turn_complete or content.generation_complete:
                 state.model_is_speaking = False
                 if gemini_buffer:
-                    await self._emit_transcript("agent", gemini_buffer)
+                    await self._emit_transcript("agent", gemini_buffer, state)
                     gemini_buffer = ""
 
         # Flush any remaining partial transcript chunks when receive loop exits.
         if gemini_buffer:
-            await self._emit_transcript("agent", gemini_buffer)
+            await self._emit_transcript("agent", gemini_buffer, state)
 
     @staticmethod
     def _append_transcript(buffer: str, chunk: str) -> str:
@@ -289,16 +297,29 @@ class BridgeService:
         clean_text = re.sub(r"\s+", " ", text).strip()
         return clean_text
 
-    async def _emit_transcript(self, speaker: str, text: str) -> None:
+    async def _emit_transcript(self, speaker: str, text: str, state: StreamState) -> None:
         clean_text = self._normalize_transcript(text)
         if not clean_text:
             return
         LOGGER.info("%s> %s", speaker, clean_text)
-        await self._append_conversation_line(f"{speaker}>{clean_text}")
+        await self._append_conversation_line(
+            f"{speaker}>{clean_text}",
+            conversation_file=state.conversation_file,
+        )
 
-    async def _append_conversation_line(self, line: str) -> None:
+    def _build_conversation_file_path(self, call_sid: str) -> str:
+        if not self._conversation_per_call:
+            return self._conversation_log_file
+
+        safe_call_sid = re.sub(r"[^A-Za-z0-9_-]+", "_", (call_sid or "unknown").strip()) or "unknown"
+        timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        self._conversation_dir.mkdir(parents=True, exist_ok=True)
+        return str((self._conversation_dir / f"{timestamp}_{safe_call_sid}.txt").resolve())
+
+    async def _append_conversation_line(self, line: str, conversation_file: str) -> None:
+        target_file = conversation_file or self._conversation_log_file
         async with self._conversation_log_lock:
-            with open(self._conversation_log_file, "a", encoding="utf-8") as f:
+            with open(target_file, "a", encoding="utf-8") as f:
                 f.write(f"{line}\n")
 
     @staticmethod

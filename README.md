@@ -39,6 +39,8 @@ to Gemini Live and Gemini audio is streamed back to the caller.
 - `WHISPER_COMPUTE_TYPE` (default: `float16`)
 - `WHISPER_LANGUAGE` (default: `en`)
 - `WHISPER_FALLBACK_TO_CPU` (default: `false`, keep `false` for strict CUDA-only)
+- `CONVERSATION_DIR` (default: `conversation`)
+- `CONVERSATION_PER_CALL` (default: `true`, creates one transcript file per call)
 
 ## Run flow
 1. Start `gemini_bridge.py` (WebSocket server).
@@ -83,3 +85,4 @@ You can also manually transcribe the newest recording:
 - Converts to PCM16 16k and sends to Gemini Live
 - Receives Gemini audio and converts it back to Twilio μ-law 8k
 - Handles basic interruption by clearing buffered model audio when caller speech is detected
+- Logs call transcripts as per-call files in `conversation/` (for example: `20260329T000000Z_CAxxxx.txt`)
