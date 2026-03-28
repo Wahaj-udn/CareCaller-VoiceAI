@@ -33,3 +33,6 @@ conversation.txt
 
 # Runtime call recordings
 recordings/*.mp3
+
+# Runtime whisper transcripts
+whisper_transcript/*.txt

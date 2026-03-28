@@ -14,6 +14,7 @@ class ServerTests(unittest.TestCase):
         os.environ.pop("TWILIO_ACCOUNT_SID", None)
         os.environ.pop("TWILIO_AUTH_TOKEN", None)
         os.environ.pop("RECORDINGS_DIR", None)
+    os.environ.pop("AUTO_TRANSCRIBE_RECORDINGS", None)
 
     def test_health(self) -> None:
         response = self.client.get("/health")
@@ -61,7 +62,9 @@ class ServerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             os.environ["RECORDINGS_DIR"] = temp_dir
 
-            with patch("server._download_recording_mp3") as downloader:
+            with patch("server._download_recording_mp3") as downloader, patch(
+                "server._start_transcription_job"
+            ) as transcriber:
                 response = self.client.post(
                     "/voice/recording",
                     data={
@@ -82,6 +85,32 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(kwargs["account_sid"], "AC123")
             self.assertEqual(kwargs["auth_token"], "secret")
             self.assertTrue(str(kwargs["output_file"]).endswith(".mp3"))
+            transcriber.assert_called_once()
+
+    def test_recording_event_completed_skips_transcription_when_disabled(self) -> None:
+        os.environ["TWILIO_ACCOUNT_SID"] = "AC123"
+        os.environ["TWILIO_AUTH_TOKEN"] = "secret"
+        os.environ["AUTO_TRANSCRIBE_RECORDINGS"] = "false"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            os.environ["RECORDINGS_DIR"] = temp_dir
+
+            with patch("server._download_recording_mp3") as downloader, patch(
+                "server._start_transcription_job"
+            ) as transcriber:
+                response = self.client.post(
+                    "/voice/recording",
+                    data={
+                        "CallSid": "CA_TEST",
+                        "RecordingSid": "RE_TEST",
+                        "RecordingStatus": "completed",
+                        "RecordingUrl": "https://api.twilio.com/recordings/RE_TEST",
+                    },
+                )
+
+            self.assertEqual(response.status_code, 204)
+            downloader.assert_called_once()
+            transcriber.assert_not_called()
 
     def test_recording_event_completed_missing_credentials_fails(self) -> None:
         response = self.client.post(

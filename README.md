@@ -32,6 +32,13 @@ to Gemini Live and Gemini audio is streamed back to the caller.
 - `RECORD_CALLS` (default `true`)
 - `RECORDING_STATUS_CALLBACK_URL` (example: `https://<webhook-host>/voice/recording`)
 - `RECORDINGS_DIR` (default: `recordings`)
+- `AUTO_TRANSCRIBE_RECORDINGS` (default: `true`)
+- `WHISPER_TRANSCRIPT_DIR` (default: `whisper_transcript`)
+- `WHISPER_MODEL` (default: `small`)
+- `WHISPER_DEVICE` (default: `cuda`)
+- `WHISPER_COMPUTE_TYPE` (default: `float16`)
+- `WHISPER_LANGUAGE` (default: `en`)
+- `WHISPER_FALLBACK_TO_CPU` (default: `false`, keep `false` for strict CUDA-only)
 
 ## Run flow
 1. Start `gemini_bridge.py` (WebSocket server).
@@ -58,6 +65,18 @@ to Gemini Live and Gemini audio is streamed back to the caller.
 - Saved file format:
 	- `recordings/<UTC_TIMESTAMP>_<CallSid>_<RecordingSid>.mp3`
 - If a filename already exists, download is skipped.
+
+## Automatic Faster-Whisper transcription
+- As soon as a new recording is saved in `recordings/`, `server.py` starts a background
+	transcription job (when `AUTO_TRANSCRIBE_RECORDINGS=true`).
+- Transcript file format:
+	- `whisper_transcript/<recording_file_stem>.txt`
+- The transcript includes language/duration metadata and timestamped text segments.
+- On Windows, CUDA DLL folders from NVIDIA pip packages are auto-registered; with
+	`WHISPER_FALLBACK_TO_CPU=false` (default), transcription fails fast if CUDA runtime is unavailable.
+
+You can also manually transcribe the newest recording:
+- `python whisper_transcriber.py --recordings-dir recordings --transcript-dir whisper_transcript --device cuda --compute-type float16`
 
 ## Bridge behavior in `gemini_bridge.py`
 - Receives Twilio μ-law 8k audio

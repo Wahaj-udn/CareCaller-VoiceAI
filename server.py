@@ -24,14 +24,21 @@ import datetime as dt
 import os
 from pathlib import Path
 import re
+import sys
+import threading
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request
 from twilio.twiml.voice_response import Connect, VoiceResponse
+from whisper_transcriber import transcribe_recording_file
 
 load_dotenv()
+
+
+def _is_truthy(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def _safe_token(value: str, fallback: str = "unknown") -> str:
@@ -53,6 +60,30 @@ def _download_recording_mp3(recording_url: str, output_file: Path, account_sid: 
     with urlrequest.urlopen(req, timeout=30) as response:
         content = response.read()
     output_file.write_bytes(content)
+
+
+def _start_transcription_job(app: Flask, recording_file: Path) -> None:
+    def _job() -> None:
+        transcript_dir = Path(os.getenv("WHISPER_TRANSCRIPT_DIR", "whisper_transcript"))
+        whisper_model = os.getenv("WHISPER_MODEL", "small").strip() or "small"
+        whisper_device = os.getenv("WHISPER_DEVICE", "cuda").strip() or "cuda"
+        whisper_compute_type = os.getenv("WHISPER_COMPUTE_TYPE", "float16").strip() or "float16"
+        whisper_language = os.getenv("WHISPER_LANGUAGE", "en").strip() or "en"
+
+        try:
+            transcript_path = transcribe_recording_file(
+                recording_file=recording_file,
+                transcript_dir=transcript_dir,
+                model_name=whisper_model,
+                device=whisper_device,
+                compute_type=whisper_compute_type,
+                language=whisper_language,
+            )
+            app.logger.info("Saved whisper transcript to %s", transcript_path)
+        except Exception as exc:
+            app.logger.error("Whisper transcription failed for %s: %s", recording_file, exc)
+
+    threading.Thread(target=_job, daemon=True, name="whisper-transcribe").start()
 
 
 def create_app() -> Flask:
@@ -129,6 +160,9 @@ def create_app() -> Flask:
                 auth_token=auth_token,
             )
             app.logger.info("Saved call recording to %s", output_file)
+
+            if _is_truthy(os.getenv("AUTO_TRANSCRIBE_RECORDINGS", "true")):
+                _start_transcription_job(app, output_file)
         except (urlerror.URLError, TimeoutError, OSError) as exc:
             app.logger.error("Failed to download recording sid=%s: %s", recording_sid, exc)
             return ("failed to download recording", 502)
@@ -177,6 +211,18 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     app = create_app()
+    python_exe = Path(sys.executable).resolve()
+    expected_venv_python = Path.cwd() / "venv" / "Scripts" / "python.exe"
+    app.logger.info("Python executable: %s", python_exe)
+    if os.getenv("WHISPER_DEVICE", "cuda").strip().lower() == "cuda" and expected_venv_python.exists():
+        try:
+            if python_exe != expected_venv_python.resolve():
+                app.logger.warning(
+                    "WHISPER_DEVICE=cuda but server is not running with project venv Python. "
+                    "Use: .\\venv\\Scripts\\python.exe .\\server.py"
+                )
+        except OSError:
+            pass
     app.run(host=args.host, port=args.port, debug=args.debug)
     return 0
 
