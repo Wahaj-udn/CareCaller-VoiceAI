@@ -27,3 +27,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Runtime generated conversation transcript
+conversation.txt

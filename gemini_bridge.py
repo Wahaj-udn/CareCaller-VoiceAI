@@ -32,6 +32,7 @@ from typing import Optional
 
 import websockets
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 from dotenv import load_dotenv
 
@@ -120,6 +121,8 @@ class BridgeService:
         self._mission_prompt = mission_prompt
         self._kickoff_prompt = kickoff_prompt
         self._interrupt_rms_threshold = interrupt_rms_threshold
+        self._conversation_log_file = os.getenv("CONVERSATION_LOG_FILE", "conversation.txt").strip() or "conversation.txt"
+        self._conversation_log_lock = asyncio.Lock()
 
     async def handle_ws(self, websocket):
         state = StreamState()
@@ -129,6 +132,13 @@ class BridgeService:
         config = {
             "response_modalities": ["AUDIO"],
             "system_instruction": self._mission_prompt,
+            "input_audio_transcription": {},
+            "realtime_input_config": {
+                "automatic_activity_detection": {
+                    "prefix_padding_ms": int(os.getenv("VAD_PREFIX_PADDING_MS", "120")),
+                    "silence_duration_ms": int(os.getenv("VAD_SILENCE_DURATION_MS", "450")),
+                }
+            },
         }
 
         async with self._client.aio.live.connect(model=self._model, config=config) as session:
@@ -160,7 +170,10 @@ class BridgeService:
                 if gemini_to_twilio_task in done:
                     exc = gemini_to_twilio_task.exception()
                     if exc:
-                        raise exc
+                        if self._is_transient_live_disconnect(exc):
+                            LOGGER.warning("Transient Gemini Live disconnect (%s); restarting receiver", exc)
+                        else:
+                            raise exc
                     LOGGER.info("Gemini receive loop ended; restarting receiver for next turn")
                     gemini_to_twilio_task = asyncio.create_task(
                         self._forward_gemini_to_twilio(websocket, session, state)
@@ -178,6 +191,7 @@ class BridgeService:
                 state.stream_sid = start.get("streamSid", "")
                 state.call_sid = start.get("callSid", "")
                 LOGGER.info("Stream started call_sid=%s stream_sid=%s", state.call_sid, state.stream_sid)
+                await self._append_conversation_line(f"\n# call_sid={state.call_sid or 'unknown'}")
                 continue
 
             if event == "media":
@@ -205,16 +219,20 @@ class BridgeService:
                 break
 
     async def _forward_gemini_to_twilio(self, websocket, session, state: StreamState) -> None:
+        gemini_buffer = ""
+
         async for response in session.receive():
             content = response.server_content
             if not content:
                 continue
 
             if content.input_transcription and content.input_transcription.text:
-                LOGGER.info("caller> %s", content.input_transcription.text)
+                # Log caller speech as soon as transcript text arrives to avoid
+                # waiting for finalization and appearing "late" in logs.
+                await self._emit_transcript("user", content.input_transcription.text)
 
             if content.output_transcription and content.output_transcription.text:
-                LOGGER.info("gemini> %s", content.output_transcription.text)
+                gemini_buffer = self._append_transcript(gemini_buffer, content.output_transcription.text)
 
             if content.model_turn and content.model_turn.parts:
                 for part in content.model_turn.parts:
@@ -239,6 +257,43 @@ class BridgeService:
 
             if content.interrupted or content.turn_complete or content.generation_complete:
                 state.model_is_speaking = False
+                if gemini_buffer:
+                    await self._emit_transcript("agent", gemini_buffer)
+                    gemini_buffer = ""
+
+        # Flush any remaining partial transcript chunks when receive loop exits.
+        if gemini_buffer:
+            await self._emit_transcript("agent", gemini_buffer)
+
+    @staticmethod
+    def _append_transcript(buffer: str, chunk: str) -> str:
+        if not chunk:
+            return buffer
+        return f"{buffer}{chunk}"
+
+    @staticmethod
+    def _normalize_transcript(text: str) -> str:
+        clean_text = re.sub(r"\s+", " ", text).strip()
+        return clean_text
+
+    async def _emit_transcript(self, speaker: str, text: str) -> None:
+        clean_text = self._normalize_transcript(text)
+        if not clean_text:
+            return
+        LOGGER.info("%s> %s", speaker, clean_text)
+        await self._append_conversation_line(f"{speaker}>{clean_text}")
+
+    async def _append_conversation_line(self, line: str) -> None:
+        async with self._conversation_log_lock:
+            with open(self._conversation_log_file, "a", encoding="utf-8") as f:
+                f.write(f"{line}\n")
+
+    @staticmethod
+    def _is_transient_live_disconnect(exc: Exception) -> bool:
+        if isinstance(exc, genai_errors.APIError):
+            msg = str(exc)
+            return "1006" in msg or "abnormal closure" in msg.lower()
+        return False
 
     async def _send_twilio_clear(self, websocket, stream_sid: str) -> None:
         if not stream_sid:
