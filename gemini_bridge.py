@@ -124,14 +124,27 @@ class BridgeService:
         self._conversation_log_file = os.getenv("CONVERSATION_LOG_FILE", "conversation.txt").strip() or "conversation.txt"
         self._conversation_log_lock = asyncio.Lock()
 
+    @staticmethod
+    def _is_truthy(value: str) -> bool:
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+
     async def handle_ws(self, websocket):
         state = StreamState()
         client_addr = getattr(websocket, "remote_address", None)
         LOGGER.info("Twilio stream connected from %s", client_addr)
 
+        force_english = self._is_truthy(os.getenv("FORCE_ENGLISH", "true"))
+        system_instruction = self._mission_prompt
+        if force_english:
+            system_instruction = (
+                f"{system_instruction}\n\n"
+                "Language policy: Use English only. "
+                "If the caller speaks another language, politely ask to continue in English."
+            )
+
         config = {
             "response_modalities": ["AUDIO"],
-            "system_instruction": self._mission_prompt,
+            "system_instruction": system_instruction,
             "input_audio_transcription": {},
             "realtime_input_config": {
                 "automatic_activity_detection": {
@@ -361,7 +374,10 @@ def main() -> int:
         interrupt_rms_threshold=args.interrupt_rms_threshold,
     )
 
-    asyncio.run(run_server(args.host, args.port, args.path, service))
+    try:
+        asyncio.run(run_server(args.host, args.port, args.path, service))
+    except KeyboardInterrupt:
+        LOGGER.info("Gemini bridge stopped by user")
     return 0
 
 
