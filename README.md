@@ -1,12 +1,54 @@
-# Carecaller - Twilio ↔ Gemini Live Starter
+# Carecaller – AI Voice Healthcare Assistant
 
-This project now supports a real phone call path where Twilio media is streamed
-to Gemini Live and Gemini audio is streamed back to the caller.
+Carecaller is an end-to-end AI voice system that automates healthcare check-in calls using real-time conversation and structured data extraction.
+
+It combines telephony, real-time AI, and post-call processing into a single pipeline that can both talk like a human and produce clean, usable data.
+
+Most healthcare call systems either: sound robotic, or generate messy, unusable data
+This project aims to bridges that gap:
+Natural conversations in → clean structured insights out
+
+## High-level overview
+
+### Purpose
+Carecaller automates healthcare check-in calls end to end:
+- run a live AI voice conversation,
+- record and transcribe the call,
+- normalize and extract structured answers,
+- produce dataset-ready JSON outputs for downstream analysis.
+
+It is designed to be both conversational for users and deterministic for data pipelines.
+
+### End-to-end workflow
+1. A call is placed/received through Twilio.
+2. Live audio is streamed to Gemini through the bridge.
+3. Twilio recording callback triggers MP3 download.
+4. MP3 is transcribed with Whisper.
+5. Transcript is aligned with conversation logs for speaker fidelity.
+6. Transcript is normalized to strict `[AGENT]/[USER]` format with `outcome=<label>`.
+7. Canonical Q&A is extracted for 14 fixed questions.
+8. Aggregated sample is appended into `result.json`.
+
+### System at a glance
+- **Call layer:** Twilio call routing, webhooks, recordings.
+- **Realtime AI layer:** `gemini_bridge.py` + Gemini Live for bidirectional voice.
+- **Post-call NLP layer:** Whisper transcription, transcript alignment, normalization.
+- **Structured data layer:** Q&A extraction + `result.json` builder with incremental state.
+
+### Main outputs
+- `conversation/*.txt` -> per-call live logs
+- `whisper_transcript/*.txt` -> ASR transcript
+- `final_transcript/*.txt` -> speaker-labeled transcript
+- `normalized_transcript/*.normalized.txt` -> deterministic cleaned transcript
+- `qa_json/*.qa.json` -> 14-question extracted answers
+- `result.json` -> aggregated final dataset
 
 ## Additional documentation
 - `PROJECT_RETROSPECTIVE.md`: detailed project journey, issues faced, and solutions.
 - `ARCHITECTURE_AND_SETUP.md`: architecture, end-to-end flow, setup, runbook, and troubleshooting.
 - `ARCHITECTURE_DIAGRAM_AND_FLOW.md`: visual architecture diagram plus very detailed stage-by-stage flow.
+
+## Technical reference
 
 ## Git-safe setup
 - Copy `.env.example` to `.env` and fill in real values.
