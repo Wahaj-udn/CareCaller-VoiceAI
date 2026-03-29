@@ -16,6 +16,7 @@ load_dotenv()
 DEFAULT_MODEL = os.getenv("TRANSCRIPT_NORMALIZER_MODEL", "gemini-2.5-flash")
 DEFAULT_OUTPUT_DIR = os.getenv("NORMALIZED_TRANSCRIPT_DIR", "normalized_transcript")
 DEFAULT_INPUT_DIR = os.getenv("FINAL_TRANSCRIPT_DIR", "final_transcript")
+DEFAULT_CONVERSATION_DIR = os.getenv("CONVERSATION_DIR", "conversation")
 NORMALIZER_API_KEY_ENV = "TRANSCRIPT_NORMALIZER_GEMINI_API_KEY"
 OUTCOME_LABELS = {
     "voicemail",
@@ -29,7 +30,70 @@ OUTCOME_LABELS = {
 DEFAULT_OUTCOME = "incomplete"
 
 
-def build_prompt(raw_transcript: str) -> str:
+def extract_agent_reference_lines(conversation_text: str) -> list[str]:
+    """Extract ordered agent> lines from conversation logs for prompt grounding."""
+    refs: list[str] = []
+
+    # conversation format examples:
+    # [12.34-15.67] agent> text
+    # agent> text
+    agent_pattern = re.compile(r"^(?:\[[^\]]+\]\s*)?agent>\s*(.+)$", re.IGNORECASE)
+
+    for line in conversation_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        agent_match = agent_pattern.match(line)
+        if agent_match:
+            agent_text = agent_match.group(1).strip()
+            if agent_text:
+                refs.append(f"agent> {agent_text}")
+
+    return refs
+
+
+def extract_call_sid_from_name(file_name: str) -> str | None:
+    match = re.search(r"(CA[A-Za-z0-9]+)", file_name)
+    if match:
+        return match.group(1)
+    return None
+
+
+def resolve_conversation_file_for_input(input_file: Path, conversation_dir: Path) -> Path | None:
+    call_sid = extract_call_sid_from_name(input_file.name)
+    if not call_sid or not conversation_dir.exists():
+        return None
+
+    candidates = sorted(
+        conversation_dir.glob(f"*{call_sid}*.txt"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    input_resolved = input_file.resolve()
+    candidates = [p for p in candidates if p.resolve() != input_resolved]
+    if not candidates:
+        return None
+
+    return candidates[0]
+
+
+def build_conversation_pair_block(conversation_file: Path | None) -> str:
+    if conversation_file is None:
+        return "- (no matching conversation file found)"
+
+    text = conversation_file.read_text(encoding="utf-8", errors="ignore")
+    refs = extract_agent_reference_lines(text)
+    if not refs:
+        return "- (no agent lines found in conversation file)"
+
+    # Keep prompt size manageable while preserving recent context.
+    tail_refs = refs[-120:]
+    return "\n".join(f"- {line}" for line in tail_refs)
+
+
+def build_prompt(raw_transcript: str, agent_reference_block: str) -> str:
+
     return f"""You are a transcript normalization engine for a healthcare AI system.
 
 CONTEXT:
@@ -57,6 +121,15 @@ The transcript may contain:
 ----------------------------------------
 
 Transform the transcript into a clean conversational format.
+
+----------------------------------------
+AGENT REFERENCE LINES (GROUNDING)
+----------------------------------------
+
+These are extracted from the matching file in conversation/ as agent> lines only.
+Use them as the highest-priority grounding to preserve agent question wording and intent.
+
+{agent_reference_block}
 
 ----------------------------------------
 OUTCOME CLASSIFICATION (FIRST LINE, STRICT)
@@ -96,6 +169,10 @@ STRICT RULES (VERY IMPORTANT)
 - Do NOT hallucinate missing answers
 - Do NOT change meaning
 - Only reorganize, clean, and correct structure
+- Do NOT rewrite user answers/content.
+- Change AGENT wording only when needed to correct question phrasing using conversation grounding.
+- Keep non-question AGENT content unchanged unless minimal cleanup/splitting is needed.
+- For AGENT question variants/typos/singular-plural drift, align wording to the grounded conversation intent.
 
 ----------------------------------------
 CLEANING RULES
@@ -115,6 +192,12 @@ CLEANING RULES
    - multiple questions exist
    - question + acknowledgment exist
    - mixed speaker content exists
+
+3b. Question phrase correction scope:
+    - Correct ONLY AGENT question phrases that are malformed or variant forms.
+    - Preserve surrounding non-question content as much as possible.
+    - Do not paraphrase USER lines.
+    - Prefer grounded question wording from agent>...user> references.
 
 4. Merge lines when:
    - same speaker continues naturally
@@ -257,7 +340,10 @@ def normalize_transcript(input_file: Path, output_file: Path, model: str) -> Pat
         )
 
     raw_text = input_file.read_text(encoding="utf-8")
-    prompt = build_prompt(raw_text)
+    conversation_dir = Path(DEFAULT_CONVERSATION_DIR).resolve()
+    conversation_file = resolve_conversation_file_for_input(input_file, conversation_dir)
+    agent_reference_block = build_conversation_pair_block(conversation_file)
+    prompt = build_prompt(raw_text, agent_reference_block)
 
     client = genai.Client(api_key=api_key)
     response = client.models.generate_content(model=model, contents=prompt)

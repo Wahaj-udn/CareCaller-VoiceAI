@@ -5,9 +5,14 @@ import time
 from pathlib import Path
 
 from normalize_transcript_with_gemini import (
+    build_conversation_pair_block,
+    build_prompt,
     ensure_outcome_first_line,
+    extract_agent_reference_lines,
+    extract_call_sid_from_name,
     get_normalizer_api_key,
     merge_consecutive_speaker_tags,
+    resolve_conversation_file_for_input,
     resolve_input_file,
     sanitize_model_output,
 )
@@ -99,6 +104,54 @@ class NormalizeTranscriptTests(unittest.TestCase):
             ensure_outcome_first_line(raw),
             "outcome=incomplete\noutcome=unknown\n[AGENT]: Hi",
         )
+
+    def test_extract_agent_reference_lines(self) -> None:
+        raw = "\n".join(
+            [
+                "[0.00-2.20] agent> Hello there",
+                "user> Hi",
+                "[4.00-5.00] agent> What's your current weight in pounds?",
+                "[5.00-6.00] user> 140",
+            ]
+        )
+        pairs = extract_agent_reference_lines(raw)
+        self.assertEqual(
+            pairs,
+            [
+                "agent> Hello there",
+                "agent> What's your current weight in pounds?",
+            ],
+        )
+
+    def test_extract_call_sid_from_name(self) -> None:
+        name = "20260329T101844Z_CAdc51095739fa6b068aeabd26505e95a9_REabc.txt"
+        self.assertEqual(
+            extract_call_sid_from_name(name),
+            "CAdc51095739fa6b068aeabd26505e95a9",
+        )
+
+    def test_resolve_conversation_file_for_input(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            conv = d / "20260329T101352Z_CAdc51095739fa6b068aeabd26505e95a9.txt"
+            conv.write_text("x", encoding="utf-8")
+
+            input_file = d / "20260329T101844Z_CAdc51095739fa6b068aeabd26505e95a9_REabc.txt"
+            input_file.write_text("y", encoding="utf-8")
+
+            resolved = resolve_conversation_file_for_input(input_file, d)
+            self.assertEqual(resolved, conv)
+
+    def test_build_conversation_pair_block_no_file(self) -> None:
+        self.assertEqual(
+            build_conversation_pair_block(None),
+            "- (no matching conversation file found)",
+        )
+
+    def test_build_prompt_includes_reference_block(self) -> None:
+        prompt = build_prompt("[AGENT]: Hi", "- agent> Q")
+        self.assertIn("- agent> Q", prompt)
+
 
 
 if __name__ == "__main__":
