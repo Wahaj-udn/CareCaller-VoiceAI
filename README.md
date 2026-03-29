@@ -39,6 +39,9 @@ to Gemini Live and Gemini audio is streamed back to the caller.
 - `WHISPER_COMPUTE_TYPE` (default: `float16`)
 - `WHISPER_LANGUAGE` (default: `en`)
 - `WHISPER_FALLBACK_TO_CPU` (default: `false`, keep `false` for strict CUDA-only)
+- `AUTO_BUILD_FINAL_TRANSCRIPT` (default: `true`)
+- `FINAL_TRANSCRIPT_DIR` (default: `final_transcript`)
+- `AUTO_NORMALIZE_TRANSCRIPT` (default: `true`, runs Gemini normalizer on final transcripts)
 - `CONVERSATION_DIR` (default: `conversation`)
 - `CONVERSATION_PER_CALL` (default: `true`, creates one transcript file per call)
 
@@ -79,6 +82,32 @@ to Gemini Live and Gemini audio is streamed back to the caller.
 
 You can also manually transcribe the newest recording:
 - `python whisper_transcriber.py --recordings-dir recordings --transcript-dir whisper_transcript --device cuda --compute-type float16`
+
+## Final transcript (speaker-labeled from comparison)
+- After Whisper transcription completes, the server can automatically build a speaker-labeled
+	final transcript by aligning `whisper_transcript/*.txt` with matching `conversation/*.txt`.
+- Output format:
+	- `final_transcript/<whisper_transcript_filename>.txt`
+	- each line: `[start-end] agent|user> text`
+- Matching is call-aware (`CallSid`) and uses ordered text similarity with agent timestamp boosts.
+
+Manual run example:
+- `python final_transcript_builder.py --whisper-file whisper_transcript/<file>.txt --conversation-dir conversation --output-dir final_transcript`
+
+## Gemini transcript normalization (clean [AGENT]/[USER] only)
+- Use `normalize_transcript_with_gemini.py` to pass a transcript file to Gemini with a strict
+	normalization prompt and get cleaned dialogue-only output.
+- API key resolution order:
+	1) `TRANSCRIPT_NORMALIZER_GEMINI_API_KEY` (preferred, dedicated key)
+	2) `GEMINI_API_KEY` (fallback)
+- Output file:
+	- `normalized_transcript/<input_stem>.normalized.txt` (default)
+
+Manual run example:
+- `python normalize_transcript_with_gemini.py --input-file final_transcript/<file>.txt`
+
+When `AUTO_NORMALIZE_TRANSCRIPT=true`, `server.py` automatically normalizes each newly generated
+final transcript into `normalized_transcript/`.
 
 ## Bridge behavior in `gemini_bridge.py`
 - Receives Twilio μ-law 8k audio

@@ -2,6 +2,8 @@ import base64
 import unittest
 
 from gemini_bridge import (
+    _format_seconds_compact,
+    _pcm_audio_duration_seconds,
     _parse_sample_rate,
     pcm16_rms,
     pcm_to_twilio_payload,
@@ -33,6 +35,16 @@ class GeminiBridgeCodecTests(unittest.TestCase):
     def test_pcm16_rms(self) -> None:
         silent = b"\x00\x00" * 100
         self.assertEqual(pcm16_rms(silent), 0)
+
+    def test_pcm_audio_duration_seconds(self) -> None:
+        # 320 samples @16kHz => 0.02s. Each sample is 2 bytes.
+        pcm = b"\x00\x00" * 320
+        self.assertAlmostEqual(_pcm_audio_duration_seconds(pcm, 16000), 0.02, places=6)
+
+    def test_format_seconds_compact(self) -> None:
+        self.assertEqual(_format_seconds_compact(0.0), "0")
+        self.assertEqual(_format_seconds_compact(12.300), "12.3")
+        self.assertEqual(_format_seconds_compact(12.3456), "12.346")
 
 
 if __name__ == "__main__":

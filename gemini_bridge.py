@@ -56,6 +56,9 @@ class StreamState:
     call_sid: str = ""
     model_is_speaking: bool = False
     conversation_file: str = ""
+    call_start_monotonic: float = 0.0
+    agent_turn_start_seconds: Optional[float] = None
+    agent_turn_audio_seconds: float = 0.0
 
 
 def _parse_sample_rate(mime_type: Optional[str], default: int) -> int:
@@ -88,6 +91,18 @@ def pcm16_rms(pcm_bytes: bytes) -> int:
     if not pcm_bytes:
         return 0
     return int(audioop.rms(pcm_bytes, 2))
+
+
+def _pcm_audio_duration_seconds(pcm_bytes: bytes, sample_rate: int) -> float:
+    if not pcm_bytes or sample_rate <= 0:
+        return 0.0
+    # 16-bit PCM mono -> 2 bytes per sample.
+    return (len(pcm_bytes) / 2.0) / float(sample_rate)
+
+
+def _format_seconds_compact(seconds: float) -> str:
+    text = f"{max(0.0, seconds):.3f}".rstrip("0").rstrip(".")
+    return text if text else "0"
 
 
 def load_mission_prompt() -> str:
@@ -208,6 +223,7 @@ class BridgeService:
                 state.stream_sid = start.get("streamSid", "")
                 state.call_sid = start.get("callSid", "")
                 state.conversation_file = self._build_conversation_file_path(state.call_sid)
+                state.call_start_monotonic = asyncio.get_running_loop().time()
                 LOGGER.info("Stream started call_sid=%s stream_sid=%s", state.call_sid, state.stream_sid)
                 await self._append_conversation_line(
                     f"# call_sid={state.call_sid or 'unknown'}",
@@ -274,17 +290,27 @@ class BridgeService:
                             }
                         )
                     )
+                    if state.agent_turn_start_seconds is None:
+                        state.agent_turn_start_seconds = self._elapsed_call_seconds(state)
+                    state.agent_turn_audio_seconds += _pcm_audio_duration_seconds(
+                        part.inline_data.data,
+                        input_rate,
+                    )
                     state.model_is_speaking = True
 
             if content.interrupted or content.turn_complete or content.generation_complete:
                 state.model_is_speaking = False
                 if gemini_buffer:
-                    await self._emit_transcript("agent", gemini_buffer, state)
+                    time_range = self._current_agent_time_range(state)
+                    await self._emit_transcript("agent", gemini_buffer, state, time_range=time_range)
                     gemini_buffer = ""
+                self._reset_agent_turn_timing(state)
 
         # Flush any remaining partial transcript chunks when receive loop exits.
         if gemini_buffer:
-            await self._emit_transcript("agent", gemini_buffer, state)
+            time_range = self._current_agent_time_range(state)
+            await self._emit_transcript("agent", gemini_buffer, state, time_range=time_range)
+        self._reset_agent_turn_timing(state)
 
     @staticmethod
     def _append_transcript(buffer: str, chunk: str) -> str:
@@ -297,15 +323,49 @@ class BridgeService:
         clean_text = re.sub(r"\s+", " ", text).strip()
         return clean_text
 
-    async def _emit_transcript(self, speaker: str, text: str, state: StreamState) -> None:
+    async def _emit_transcript(
+        self,
+        speaker: str,
+        text: str,
+        state: StreamState,
+        time_range: Optional[tuple[float, float]] = None,
+    ) -> None:
         clean_text = self._normalize_transcript(text)
         if not clean_text:
             return
         LOGGER.info("%s> %s", speaker, clean_text)
+        line_prefix = ""
+        if speaker == "agent" and time_range is not None:
+            start_s, end_s = time_range
+            line_prefix = f"[{_format_seconds_compact(start_s)}-{_format_seconds_compact(end_s)}] "
         await self._append_conversation_line(
-            f"{speaker}>{clean_text}",
+            f"{line_prefix}{speaker}>{clean_text}",
             conversation_file=state.conversation_file,
         )
+
+    @staticmethod
+    def _elapsed_call_seconds(state: StreamState) -> float:
+        if state.call_start_monotonic <= 0:
+            return 0.0
+        return max(0.0, asyncio.get_running_loop().time() - state.call_start_monotonic)
+
+    def _current_agent_time_range(self, state: StreamState) -> tuple[float, float]:
+        start = state.agent_turn_start_seconds
+        if start is None:
+            now = self._elapsed_call_seconds(state)
+            return now, now
+
+        if state.agent_turn_audio_seconds > 0:
+            end = start + state.agent_turn_audio_seconds
+        else:
+            end = self._elapsed_call_seconds(state)
+
+        return start, max(start, end)
+
+    @staticmethod
+    def _reset_agent_turn_timing(state: StreamState) -> None:
+        state.agent_turn_start_seconds = None
+        state.agent_turn_audio_seconds = 0.0
 
     def _build_conversation_file_path(self, call_sid: str) -> str:
         if not self._conversation_per_call:

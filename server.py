@@ -32,6 +32,8 @@ from urllib import request as urlrequest
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request
 from twilio.twiml.voice_response import Connect, VoiceResponse
+from final_transcript_builder import build_for_whisper_file
+from normalize_transcript_with_gemini import normalize_transcript
 from whisper_transcriber import transcribe_recording_file
 
 load_dotenv()
@@ -69,6 +71,12 @@ def _start_transcription_job(app: Flask, recording_file: Path) -> None:
         whisper_device = os.getenv("WHISPER_DEVICE", "cuda").strip() or "cuda"
         whisper_compute_type = os.getenv("WHISPER_COMPUTE_TYPE", "float16").strip() or "float16"
         whisper_language = os.getenv("WHISPER_LANGUAGE", "en").strip() or "en"
+        final_transcript_dir = Path(os.getenv("FINAL_TRANSCRIPT_DIR", "final_transcript"))
+        normalized_transcript_dir = Path(os.getenv("NORMALIZED_TRANSCRIPT_DIR", "normalized_transcript"))
+        conversation_dir = Path(os.getenv("CONVERSATION_DIR", "conversation"))
+        auto_build_final = _is_truthy(os.getenv("AUTO_BUILD_FINAL_TRANSCRIPT", "true"))
+        auto_normalize_final = _is_truthy(os.getenv("AUTO_NORMALIZE_TRANSCRIPT", "true"))
+        normalizer_model = os.getenv("TRANSCRIPT_NORMALIZER_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
 
         try:
             transcript_path = transcribe_recording_file(
@@ -80,6 +88,29 @@ def _start_transcription_job(app: Flask, recording_file: Path) -> None:
                 language=whisper_language,
             )
             app.logger.info("Saved whisper transcript to %s", transcript_path)
+
+            if auto_build_final:
+                final_path = build_for_whisper_file(
+                    whisper_file=transcript_path,
+                    conversation_dir=conversation_dir,
+                    output_dir=final_transcript_dir,
+                )
+                if final_path is None:
+                    app.logger.warning(
+                        "Could not build final transcript for %s (no matching conversation file)",
+                        transcript_path,
+                    )
+                else:
+                    app.logger.info("Saved final transcript to %s", final_path)
+
+                    if auto_normalize_final:
+                        normalized_output = normalized_transcript_dir / f"{final_path.stem}.normalized.txt"
+                        normalize_transcript(
+                            input_file=final_path,
+                            output_file=normalized_output,
+                            model=normalizer_model,
+                        )
+                        app.logger.info("Saved normalized transcript to %s", normalized_output)
         except Exception as exc:
             app.logger.error("Whisper transcription failed for %s: %s", recording_file, exc)
 

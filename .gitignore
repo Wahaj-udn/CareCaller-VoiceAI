@@ -37,3 +37,9 @@ recordings/*.mp3
 
 # Runtime whisper transcripts
 whisper_transcript/*.txt
+
+# Runtime final transcripts
+final_transcript/*.txt
+
+# Gemini-normalized transcripts
+normalized_transcript/*.txt
