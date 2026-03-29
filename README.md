@@ -3,6 +3,11 @@
 This project now supports a real phone call path where Twilio media is streamed
 to Gemini Live and Gemini audio is streamed back to the caller.
 
+## Additional documentation
+- `PROJECT_RETROSPECTIVE.md`: detailed project journey, issues faced, and solutions.
+- `ARCHITECTURE_AND_SETUP.md`: architecture, end-to-end flow, setup, runbook, and troubleshooting.
+- `ARCHITECTURE_DIAGRAM_AND_FLOW.md`: visual architecture diagram plus very detailed stage-by-stage flow.
+
 ## Git-safe setup
 - Copy `.env.example` to `.env` and fill in real values.
 - `.env` is ignored by git via `.gitignore`.
