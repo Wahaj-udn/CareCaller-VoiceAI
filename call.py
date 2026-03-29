@@ -27,7 +27,9 @@ from dotenv import load_dotenv
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
 
-load_dotenv()
+# Prefer repository .env values over inherited terminal environment variables.
+# This prevents stale TWILIO_* vars in long-lived shells from causing auth errors.
+load_dotenv(override=True)
 
 
 def _is_truthy(value: str) -> bool:

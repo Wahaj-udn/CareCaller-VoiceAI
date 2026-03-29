@@ -199,6 +199,82 @@ CLEANING RULES
     - Do not paraphrase USER lines.
     - Prefer grounded question wording from agent>...user> references.
 
+3c. ONE canonical question per [AGENT] line (STRICT):
+    - Each of the 14 required questions MUST appear on its own separate [AGENT] line.
+    - NEVER combine two canonical questions into a single [AGENT] line.
+    - If the transcript has two questions merged in one line, split them into
+      two separate [AGENT] lines.
+    - Acknowledgment + question in the same line is perfectly fine.
+    
+    Example of WRONG output:
+    [AGENT]: Got it, 198 pounds. What's your height in feet and inches? How much weight have you lost this past month in pounds?
+    
+    Example of CORRECT output:
+    [AGENT]: Got it, 198 pounds. What's your height in feet and inches?
+    [AGENT]: How much weight have you lost this past month in pounds?
+
+
+    ----------------------------------------
+THE 14 CANONICAL QUESTIONS (REFERENCE)
+----------------------------------------
+
+These are the exact 14 questions the agent must ask, in order:
+
+1. How have you been feeling overall?
+2. What's your current weight in pounds?
+3. What's your height in feet and inches?
+4. How much weight have you lost this past month (in pounds)?
+5. Any side effects from your medication this month?
+6. Are you satisfied with your rate of weight loss?
+7. What's your goal weight in pounds?
+8. Any requests about your dosage?
+9. Have you started any new medications or supplements since last month?
+10. Do you have any new medical conditions since your last check-in?
+11. Any new allergies?
+12. Any surgeries since your last check-in?
+13. Any questions for your doctor?
+14. Has your shipping address changed?
+
+Use these as reference when cleaning agent lines. Each canonical question MUST
+appear on its own [AGENT] line — never merged with another canonical question.
+
+----------------------------------------
+3d. AGENT SELF-ANSWER DETECTION (CRITICAL)
+----------------------------------------
+
+Sometimes the agent answers its own question in the same line without waiting
+for the user. This causes the extractor to misalign answers to questions.
+
+Example of problematic input:
+[AGENT]: Got it, updated. Any new allergies? No new allergies, thanks. Any surgeries since your last check-in?
+[USER]: Yeah, I had a spinal surgery.
+
+In this case:
+- The agent asked Q11 (allergies) AND answered it itself ("No new allergies")
+- The agent then asked Q12 (surgeries) in the same line
+- The USER response "Yeah, I had a spinal surgery" belongs to Q12, not Q11
+
+You MUST split this into:
+[AGENT]: Got it, updated. Any new allergies?
+[USER]: No.
+[AGENT]: Any surgeries since your last check-in?
+[USER]: Yeah, I had a spinal surgery.
+
+RULES for self-answer detection:
+- If an [AGENT] line contains a canonical question FOLLOWED BY what appears to
+  be an answer ("No new allergies", "None", "Same address", "No change") FOLLOWED
+  BY another canonical question — this is a self-answer pattern.
+- Split it into three parts: [AGENT] question → [USER] with the implied answer
+  → [AGENT] next question.
+- The implied [USER] answer should be "No." or "Yes." ONLY — the minimal
+  factual answer implied by the agent's acknowledgment. Do NOT fabricate detail.
+- This is the ONLY case where you may insert a [USER] line that was not in the
+  original transcript. i repeat: ONLY in this specific case.
+- Only apply this when the agent's self-answer is a simple binary (no/none/yes/
+  same/unchanged). If the implied answer is complex or ambiguous, do NOT insert
+  a [USER] line — instead just split the [AGENT] lines and leave the USER
+  response to follow naturally.
+
 4. Merge lines when:
    - same speaker continues naturally
     - all consecutive identical tags must be merged into a single line

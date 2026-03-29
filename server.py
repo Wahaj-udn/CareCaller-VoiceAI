@@ -80,6 +80,7 @@ def _start_transcription_job(app: Flask, recording_file: Path) -> None:
         auto_build_final = _is_truthy(os.getenv("AUTO_BUILD_FINAL_TRANSCRIPT", "true"))
         auto_normalize_final = _is_truthy(os.getenv("AUTO_NORMALIZE_TRANSCRIPT", "true"))
         auto_save_qa_json = _is_truthy(os.getenv("AUTO_SAVE_QA_JSON", "true"))
+        auto_update_result_json = _is_truthy(os.getenv("AUTO_UPDATE_RESULT_JSON", "true"))
         normalizer_model = os.getenv("TRANSCRIPT_NORMALIZER_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
 
         try:
@@ -128,6 +129,15 @@ def _start_transcription_job(app: Flask, recording_file: Path) -> None:
                                 encoding="utf-8",
                             )
                             app.logger.info("Saved question/answer JSON to %s", qa_output)
+
+                        if auto_update_result_json:
+                            try:
+                                import build_result_json
+
+                                build_result_json.main()
+                                app.logger.info("Updated result.json after call processing")
+                            except Exception as update_exc:
+                                app.logger.error("Failed to update result.json: %s", update_exc)
         except Exception as exc:
             app.logger.error("Whisper transcription failed for %s: %s", recording_file, exc)
 
