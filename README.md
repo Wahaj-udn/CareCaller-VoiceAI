@@ -42,6 +42,8 @@ to Gemini Live and Gemini audio is streamed back to the caller.
 - `AUTO_BUILD_FINAL_TRANSCRIPT` (default: `true`)
 - `FINAL_TRANSCRIPT_DIR` (default: `final_transcript`)
 - `AUTO_NORMALIZE_TRANSCRIPT` (default: `true`, runs Gemini normalizer on final transcripts)
+- `AUTO_SAVE_QA_JSON` (default: `true`, extracts canonical Q&A JSON from normalized transcript)
+- `QA_JSON_DIR` (default: `qa_json`)
 - `CONVERSATION_DIR` (default: `conversation`)
 - `CONVERSATION_PER_CALL` (default: `true`, creates one transcript file per call)
 
@@ -108,6 +110,15 @@ Manual run example:
 
 When `AUTO_NORMALIZE_TRANSCRIPT=true`, `server.py` automatically normalizes each newly generated
 final transcript into `normalized_transcript/`.
+
+## Automatic Q&A JSON extraction
+- After normalization, `server.py` can automatically extract answers for the 14 canonical questions
+	and save structured JSON output.
+- Output file format:
+	- `qa_json/<final_transcript_stem>.qa.json`
+- Controlled by:
+	- `AUTO_SAVE_QA_JSON=true`
+	- `QA_JSON_DIR=qa_json`
 
 ## Bridge behavior in `gemini_bridge.py`
 - Receives Twilio μ-law 8k audio

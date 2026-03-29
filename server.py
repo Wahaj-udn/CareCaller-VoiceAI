@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import base64
 import datetime as dt
+import json
 import os
 from pathlib import Path
 import re
@@ -32,6 +33,7 @@ from urllib import request as urlrequest
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request
 from twilio.twiml.voice_response import Connect, VoiceResponse
+from extract_responses import extract_responses, parse_transcript
 from final_transcript_builder import build_for_whisper_file
 from normalize_transcript_with_gemini import normalize_transcript
 from whisper_transcriber import transcribe_recording_file
@@ -73,9 +75,11 @@ def _start_transcription_job(app: Flask, recording_file: Path) -> None:
         whisper_language = os.getenv("WHISPER_LANGUAGE", "en").strip() or "en"
         final_transcript_dir = Path(os.getenv("FINAL_TRANSCRIPT_DIR", "final_transcript"))
         normalized_transcript_dir = Path(os.getenv("NORMALIZED_TRANSCRIPT_DIR", "normalized_transcript"))
+        qa_json_dir = Path(os.getenv("QA_JSON_DIR", "qa_json"))
         conversation_dir = Path(os.getenv("CONVERSATION_DIR", "conversation"))
         auto_build_final = _is_truthy(os.getenv("AUTO_BUILD_FINAL_TRANSCRIPT", "true"))
         auto_normalize_final = _is_truthy(os.getenv("AUTO_NORMALIZE_TRANSCRIPT", "true"))
+        auto_save_qa_json = _is_truthy(os.getenv("AUTO_SAVE_QA_JSON", "true"))
         normalizer_model = os.getenv("TRANSCRIPT_NORMALIZER_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
 
         try:
@@ -111,6 +115,19 @@ def _start_transcription_job(app: Flask, recording_file: Path) -> None:
                             model=normalizer_model,
                         )
                         app.logger.info("Saved normalized transcript to %s", normalized_output)
+
+                        if auto_save_qa_json:
+                            qa_json_dir.mkdir(parents=True, exist_ok=True)
+                            qa_output = qa_json_dir / f"{final_path.stem}.qa.json"
+                            parsed_turns = parse_transcript(
+                                normalized_output.read_text(encoding="utf-8", errors="ignore")
+                            )
+                            responses = extract_responses(parsed_turns)
+                            qa_output.write_text(
+                                json.dumps(responses, indent=2),
+                                encoding="utf-8",
+                            )
+                            app.logger.info("Saved question/answer JSON to %s", qa_output)
         except Exception as exc:
             app.logger.error("Whisper transcription failed for %s: %s", recording_file, exc)
 

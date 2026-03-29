@@ -17,6 +17,16 @@ DEFAULT_MODEL = os.getenv("TRANSCRIPT_NORMALIZER_MODEL", "gemini-2.5-flash")
 DEFAULT_OUTPUT_DIR = os.getenv("NORMALIZED_TRANSCRIPT_DIR", "normalized_transcript")
 DEFAULT_INPUT_DIR = os.getenv("FINAL_TRANSCRIPT_DIR", "final_transcript")
 NORMALIZER_API_KEY_ENV = "TRANSCRIPT_NORMALIZER_GEMINI_API_KEY"
+OUTCOME_LABELS = {
+    "voicemail",
+    "wrong_number",
+    "opted_out",
+    "scheduled",
+    "incomplete",
+    "escalated",
+    "completed",
+}
+DEFAULT_OUTCOME = "incomplete"
 
 
 def build_prompt(raw_transcript: str) -> str:
@@ -47,6 +57,36 @@ The transcript may contain:
 ----------------------------------------
 
 Transform the transcript into a clean conversational format.
+
+----------------------------------------
+OUTCOME CLASSIFICATION (FIRST LINE, STRICT)
+----------------------------------------
+
+You MUST output the FIRST line exactly in this format:
+outcome=<label>
+
+Allowed labels:
+- voicemail
+- wrong_number
+- opted_out
+- scheduled
+- incomplete
+- escalated
+- completed
+
+Definitions:
+- voicemail: no real user response; no patient interaction after opener.
+- wrong_number: user answers and clearly denies being the target patient.
+- opted_out: target patient is reached/confirmed but refuses check-in/refill or asks to stop.
+- scheduled: target patient is reached but asks for callback/reschedule and callback timing is agreed.
+- incomplete: check-in starts but all 14 required questions are not completed.
+- escalated: concerning medical disclosure requiring human follow-up.
+- completed: all 14 required questions completed and no escalation trigger.
+
+Decision priority if multiple seem possible:
+wrong_number > voicemail > opted_out > scheduled > escalated > completed > incomplete
+
+If uncertain, choose: incomplete
 
 ----------------------------------------
 STRICT RULES (VERY IMPORTANT)
@@ -104,11 +144,13 @@ OUTPUT FORMAT (STRICT)
 
 Return a SINGLE STRING exactly like this:
 
-\"[AGENT]: ...
+"outcome=incomplete
+[AGENT]: ...
 [USER]: ...
 [AGENT]: ...
 [USER]: ...\"
 
+- First line MUST be outcome=<label>
 - No timestamps
 - No extra commentary
 - No JSON
@@ -132,6 +174,31 @@ def sanitize_model_output(text: str) -> str:
             lines = lines[:-1]
         cleaned = "\n".join(lines).strip()
     return cleaned
+
+
+def ensure_outcome_first_line(text: str) -> str:
+    """Ensure first line is outcome=<allowed_label>; fallback to outcome=incomplete."""
+    lines = [ln.rstrip() for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return f"outcome={DEFAULT_OUTCOME}"
+
+    outcome_line: str | None = None
+    outcome_pattern = re.compile(r"^outcome\s*=\s*([a-z_]+)\s*$", re.IGNORECASE)
+
+    remaining: list[str] = []
+    for ln in lines:
+        m = outcome_pattern.match(ln.strip())
+        if m and outcome_line is None:
+            label = m.group(1).lower()
+            if label in OUTCOME_LABELS:
+                outcome_line = f"outcome={label}"
+                continue
+        remaining.append(ln)
+
+    if outcome_line is None:
+        outcome_line = f"outcome={DEFAULT_OUTCOME}"
+
+    return "\n".join([outcome_line, *remaining]).strip()
 
 
 def merge_consecutive_speaker_tags(text: str) -> str:
@@ -195,6 +262,7 @@ def normalize_transcript(input_file: Path, output_file: Path, model: str) -> Pat
     client = genai.Client(api_key=api_key)
     response = client.models.generate_content(model=model, contents=prompt)
     output_text = sanitize_model_output(response.text or "")
+    output_text = ensure_outcome_first_line(output_text)
     output_text = merge_consecutive_speaker_tags(output_text)
 
     output_file.parent.mkdir(parents=True, exist_ok=True)

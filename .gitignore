@@ -43,3 +43,6 @@ final_transcript/*.txt
 
 # Gemini-normalized transcripts
 normalized_transcript/*.txt
+
+# Runtime extracted Q&A JSONs
+qa_json/*.json

@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 from normalize_transcript_with_gemini import (
+    ensure_outcome_first_line,
     get_normalizer_api_key,
     merge_consecutive_speaker_tags,
     resolve_input_file,
@@ -79,6 +80,24 @@ class NormalizeTranscriptTests(unittest.TestCase):
                     "[AGENT]: Great",
                 ]
             ),
+        )
+
+    def test_ensure_outcome_first_line_keeps_valid_label(self) -> None:
+        raw = "outcome=completed\n[AGENT]: Hi\n[USER]: Hello"
+        self.assertEqual(ensure_outcome_first_line(raw), raw)
+
+    def test_ensure_outcome_first_line_inserts_default_when_missing(self) -> None:
+        raw = "[AGENT]: Hi\n[USER]: Hello"
+        self.assertEqual(
+            ensure_outcome_first_line(raw),
+            "outcome=incomplete\n[AGENT]: Hi\n[USER]: Hello",
+        )
+
+    def test_ensure_outcome_first_line_removes_invalid_label(self) -> None:
+        raw = "outcome=unknown\n[AGENT]: Hi"
+        self.assertEqual(
+            ensure_outcome_first_line(raw),
+            "outcome=incomplete\noutcome=unknown\n[AGENT]: Hi",
         )
 
 
