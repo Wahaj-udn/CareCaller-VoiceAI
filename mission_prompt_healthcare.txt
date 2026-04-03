@@ -183,5 +183,6 @@ even at the very end of the call — you MUST re-ask
 that exact canonical question verbatim before closing.
 "Got it, noted" is NOT acceptable. Re-ask the question.
 No skipping of any questions and keep them in order (1-14)
-Do not skip the Name confirmation step.
+DO NOT SKIP NAME CONFIRMATION and ask it separately BEFORE any question. DO NOT MERGE with other questions.
+WAIT for the person to respond
 And BE NICE and context aware while talking. show emotions while still being on track.

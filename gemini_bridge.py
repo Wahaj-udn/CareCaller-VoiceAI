@@ -60,6 +60,8 @@ class StreamState:
     agent_turn_start_seconds: Optional[float] = None
     agent_turn_audio_seconds: float = 0.0
     patient_name: str = "Patient"
+    awaiting_first_user_response: bool = True
+    initial_agent_turns_sent: int = 0
 
 
 def _parse_sample_rate(mime_type: Optional[str], default: int) -> int:
@@ -255,6 +257,14 @@ class BridgeService:
                         f"'{state.patient_name}'. Use this exact name in greetings and references."
                     )
                 )
+                await session.send_realtime_input(
+                    text=(
+                        "Strict turn-taking rule for this call: Ask exactly one question at a time and then stop "
+                        "speaking to wait for the caller's response. Do not ask the next question until a caller "
+                        "response is received. This especially applies to name confirmation: after asking \"Hi, is "
+                        "this {patient_name}?\" you must wait for the caller's reply before continuing."
+                    )
+                )
                 if self._kickoff_prompt:
                     await session.send_realtime_input(
                         text=apply_prompt_template(self._kickoff_prompt, patient_name=state.patient_name)
@@ -287,6 +297,7 @@ class BridgeService:
 
     async def _forward_gemini_to_twilio(self, websocket, session, state: StreamState) -> None:
         gemini_buffer = ""
+        suppress_current_turn = False
 
         async for response in session.receive():
             content = response.server_content
@@ -297,6 +308,7 @@ class BridgeService:
                 # Log caller speech as soon as transcript text arrives to avoid
                 # waiting for finalization and appearing "late" in logs.
                 await self._emit_transcript("user", content.input_transcription.text, state)
+                state.awaiting_first_user_response = False
 
             if content.output_transcription and content.output_transcription.text:
                 gemini_buffer = self._append_transcript(gemini_buffer, content.output_transcription.text)
@@ -304,6 +316,10 @@ class BridgeService:
             if content.model_turn and content.model_turn.parts:
                 for part in content.model_turn.parts:
                     if not part.inline_data or not part.inline_data.data:
+                        continue
+
+                    if state.awaiting_first_user_response and state.initial_agent_turns_sent >= 1:
+                        suppress_current_turn = True
                         continue
 
                     input_rate = _parse_sample_rate(part.inline_data.mime_type, default=24000)
@@ -331,9 +347,24 @@ class BridgeService:
             if content.interrupted or content.turn_complete or content.generation_complete:
                 state.model_is_speaking = False
                 if gemini_buffer:
-                    time_range = self._current_agent_time_range(state)
-                    await self._emit_transcript("agent", gemini_buffer, state, time_range=time_range)
+                    if state.awaiting_first_user_response and state.initial_agent_turns_sent >= 1:
+                        LOGGER.info("Suppressed unsolicited agent turn before first caller response")
+                    else:
+                        time_range = self._current_agent_time_range(state)
+                        await self._emit_transcript("agent", gemini_buffer, state, time_range=time_range)
+                        if state.awaiting_first_user_response:
+                            state.initial_agent_turns_sent += 1
                     gemini_buffer = ""
+
+                if suppress_current_turn:
+                    await session.send_realtime_input(
+                        text=(
+                            "Do not continue speaking yet. Wait silently for the caller's response to your first "
+                            "question before generating any next question or follow-up."
+                        )
+                    )
+                    suppress_current_turn = False
+
                 self._reset_agent_turn_timing(state)
 
         # Flush any remaining partial transcript chunks when receive loop exits.
