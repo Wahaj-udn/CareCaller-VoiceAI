@@ -33,12 +33,21 @@ from urllib import request as urlrequest
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request
 from twilio.twiml.voice_response import Connect, VoiceResponse
+from csv_call_queue import handle_status_callback
 from extract_responses import extract_responses, parse_transcript
 from final_transcript_builder import build_for_whisper_file
 from normalize_transcript_with_gemini import normalize_transcript
 from whisper_transcriber import transcribe_recording_file
 
 load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parent
+
+
+def _resolve_state_path(raw_path: str) -> Path:
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path
+    return PROJECT_ROOT / path
 
 
 def _is_truthy(value: str) -> bool:
@@ -161,11 +170,22 @@ def create_app() -> Flask:
 
     @app.post("/voice/events")
     def voice_events() -> Response:
-        # Keep this lightweight. In the next step we can persist call state/event logs.
         event = dict(request.form)
         call_sid = event.get("CallSid", "unknown")
         status = event.get("CallStatus") or event.get("StreamEvent") or "unknown"
         app.logger.info("voice_event call_sid=%s status=%s", call_sid, status)
+
+        queue_mode = (request.args.get("csv_queue") or "").strip() == "1"
+        state_path = _resolve_state_path(os.getenv("CALL_CSV_STATE_FILE", ".call_csv_state.json"))
+        try:
+            advanced = handle_status_callback(event, state_path)
+            if advanced:
+                app.logger.info("csv_queue advanced after call_sid=%s terminal_status=%s", call_sid, status)
+            elif queue_mode:
+                app.logger.info("csv_queue callback received but no advance for call_sid=%s status=%s", call_sid, status)
+        except Exception as exc:
+            app.logger.error("csv_queue callback handling failed for call_sid=%s: %s", call_sid, exc)
+
         return ("", 204)
 
     @app.post("/voice/recording")
@@ -233,6 +253,9 @@ def create_app() -> Flask:
 def _build_voice_twiml(stream_label: str) -> Response:
     response = VoiceResponse()
     stream_url = os.getenv("MEDIA_STREAM_URL", "").strip()
+    patient_name = (request.values.get("patient_name") or "").strip()
+    patient_id = (request.values.get("patient_id") or "").strip()
+    row_index = (request.values.get("row_index") or "").strip()
 
     response.say(
         "Hi, this is Carecaller. We are connecting you to our AI interviewer now.",
@@ -241,10 +264,16 @@ def _build_voice_twiml(stream_label: str) -> Response:
 
     if stream_url:
         connect = Connect()
-        connect.stream(
+        stream = connect.stream(
             url=stream_url,
             name=f"carecaller-{stream_label}",
         )
+        if patient_name:
+            stream.parameter(name="patient_name", value=patient_name)
+        if patient_id:
+            stream.parameter(name="patient_id", value=patient_id)
+        if row_index:
+            stream.parameter(name="row_index", value=row_index)
         response.append(connect)
         response.pause(length=600)
     else:

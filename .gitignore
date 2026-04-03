@@ -49,6 +49,7 @@ qa_json/*.json
 
 # Runtime incremental builder state
 .result_build_state.json
+.call_csv_state.json
 
 # Generated aggregate dataset outputs
 result.json

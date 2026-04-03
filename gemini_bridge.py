@@ -59,6 +59,7 @@ class StreamState:
     call_start_monotonic: float = 0.0
     agent_turn_start_seconds: Optional[float] = None
     agent_turn_audio_seconds: float = 0.0
+    patient_name: str = "Patient"
 
 
 def _parse_sample_rate(mime_type: Optional[str], default: int) -> int:
@@ -112,16 +113,32 @@ def load_mission_prompt() -> str:
         if path.exists() and path.is_file():
             content = path.read_text(encoding="utf-8").strip()
             if content:
-                return apply_prompt_template(content)
+                return content
     mission_inline = os.getenv("MISSION_PROMPT", "").strip()
     if mission_inline:
-        return apply_prompt_template(mission_inline)
-    return apply_prompt_template(DEFAULT_MISSION)
+        return mission_inline
+    return DEFAULT_MISSION
 
 
-def apply_prompt_template(text: str) -> str:
-    patient_name = os.getenv("PATIENT_NAME", "Patient").strip() or "Patient"
-    return text.replace("{patient_name}", patient_name)
+def apply_prompt_template(text: str, patient_name: Optional[str] = None) -> str:
+    resolved_name = (patient_name or "").strip() or "Patient"
+    return text.replace("{patient_name}", resolved_name)
+
+
+def _extract_custom_parameters(start_payload: dict) -> dict[str, str]:
+    raw = start_payload.get("customParameters")
+    if isinstance(raw, dict):
+        return {str(k): str(v) for k, v in raw.items() if v is not None}
+    if isinstance(raw, list):
+        params: dict[str, str] = {}
+        for item in raw:
+            if isinstance(item, dict):
+                name = str(item.get("name") or "").strip()
+                value = str(item.get("value") or "").strip()
+                if name:
+                    params[name] = value
+        return params
+    return {}
 
 
 class BridgeService:
@@ -174,9 +191,6 @@ class BridgeService:
         }
 
         async with self._client.aio.live.connect(model=self._model, config=config) as session:
-            if self._kickoff_prompt:
-                await session.send_realtime_input(text=self._kickoff_prompt)
-
             twilio_to_gemini_task = asyncio.create_task(
                 self._forward_twilio_to_gemini(websocket, session, state)
             )
@@ -224,11 +238,27 @@ class BridgeService:
                 state.call_sid = start.get("callSid", "")
                 state.conversation_file = self._build_conversation_file_path(state.call_sid)
                 state.call_start_monotonic = asyncio.get_running_loop().time()
+                custom_params = _extract_custom_parameters(start)
+                state.patient_name = custom_params.get("patient_name", "").strip() or "Patient"
                 LOGGER.info("Stream started call_sid=%s stream_sid=%s", state.call_sid, state.stream_sid)
                 await self._append_conversation_line(
                     f"# call_sid={state.call_sid or 'unknown'}",
                     conversation_file=state.conversation_file,
                 )
+                await self._append_conversation_line(
+                    f"# patient_name={state.patient_name}",
+                    conversation_file=state.conversation_file,
+                )
+                await session.send_realtime_input(
+                    text=(
+                        "Call context: The patient name for this call is "
+                        f"'{state.patient_name}'. Use this exact name in greetings and references."
+                    )
+                )
+                if self._kickoff_prompt:
+                    await session.send_realtime_input(
+                        text=apply_prompt_template(self._kickoff_prompt, patient_name=state.patient_name)
+                    )
                 continue
 
             if event == "media":
@@ -440,12 +470,12 @@ def main() -> int:
     if not api_key:
         raise SystemExit("Missing GEMINI_API_KEY environment variable.")
 
-    mission_prompt = load_mission_prompt()
+    mission_prompt = apply_prompt_template(load_mission_prompt(), patient_name="Patient")
     kickoff_prompt = os.getenv(
         "MISSION_KICKOFF",
         "Please greet the caller and begin your interview mission now.",
     ).strip()
-    kickoff_prompt = apply_prompt_template(kickoff_prompt)
+    kickoff_prompt = apply_prompt_template(kickoff_prompt, patient_name="Patient")
 
     service = BridgeService(
         gemini_api_key=api_key,

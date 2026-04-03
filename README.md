@@ -49,6 +49,7 @@ It is designed to be both conversational for users and deterministic for data pi
 - `PROJECT_RETROSPECTIVE.md`: detailed project journey, issues faced, and solutions.
 - `ARCHITECTURE_AND_SETUP.md`: architecture, end-to-end flow, setup, runbook, and troubleshooting.
 - `ARCHITECTURE_DIAGRAM_AND_FLOW.md`: visual architecture diagram plus very detailed stage-by-stage flow.
+- `RUN_PROJECT_CMD.md`: exact Windows CMD commands and step-by-step run sequence.
 
 ## Technical reference
 
@@ -58,6 +59,8 @@ It is designed to be both conversational for users and deterministic for data pi
 
 ## Files
 - `call.py`: place outbound calls from your Twilio number
+- `call_csv.py`: initialize/resume CSV queue and place only the first pending call
+- `csv_call_queue.py`: callback-driven queue engine (next call starts only after terminal callback)
 - `server.py`: Twilio webhook server that returns TwiML (`/voice/outbound`, `/voice/incoming`)
 - `gemini_bridge.py`: WebSocket bridge between Twilio Media Streams and Gemini Live API
 - `test_server.py`: unit tests for webhook XML responses
@@ -79,6 +82,13 @@ It is designed to be both conversational for users and deterministic for data pi
 - `CALL_FROM_NUMBER` (default Twilio source number for `call.py`)
 - `OUTBOUND_TWIML_URL` (default TwiML URL for `call.py`)
 - `RECORD_CALLS` (default `true`)
+- `CALL_CSV_PATH` (default: `patient_checkin.csv`, used by `call_csv.py`)
+- `CALL_CSV_NAME_COLUMN` (optional explicit name column header)
+- `CALL_CSV_PHONE_COLUMN` (optional explicit phone column header)
+- `CALL_CSV_START_INDEX` (default: `0`, 0-based fallback start row)
+- `CALL_CSV_DRY_RUN` (default: `false`)
+- `CALL_CSV_RESUME` (default: `false`, resume existing queue state)
+- `CALL_CSV_STATE_FILE` (default: `.call_csv_state.json`)
 - `RECORDING_STATUS_CALLBACK_URL` (example: `https://<webhook-host>/voice/recording`)
 - `RECORDINGS_DIR` (default: `recordings`)
 - `AUTO_TRANSCRIBE_RECORDINGS` (default: `true`)
@@ -107,6 +117,13 @@ It is designed to be both conversational for users and deterministic for data pi
 
 `call.py` is `.env`-first: if `CALL_TO_NUMBER`, `CALL_FROM_NUMBER`, and
 `OUTBOUND_TWIML_URL` are set, you can run it without those flags.
+
+CSV queue run example (strict one-by-one by completion callback):
+- `python call_csv.py --csv-file patient_checkin.csv`
+- script initializes queue state and places only the first call
+- Twilio posts status callbacks to `/voice/events?csv_queue=1`
+- when active call reaches terminal status (`completed`, `busy`, `failed`, `no-answer`, `canceled`), server places the next call
+- queue progress is persisted in `.call_csv_state.json`
 
 ## Webhook endpoints in `server.py`
 - `GET /health`
