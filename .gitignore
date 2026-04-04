@@ -54,3 +54,30 @@ qa_json/*.json
 # Generated aggregate dataset outputs
 result.json
 expected_result.json
+output.csv
+patient_checkin.csv
+
+# Stitch dashboard runtime/generated artifacts
+stitch_remix_of_ai_calling_dashboard/__pycache__/
+stitch_remix_of_ai_calling_dashboard/*.py[cod]
+stitch_remix_of_ai_calling_dashboard/*$py.class
+stitch_remix_of_ai_calling_dashboard/.venv/
+stitch_remix_of_ai_calling_dashboard/venv/
+stitch_remix_of_ai_calling_dashboard/env/
+stitch_remix_of_ai_calling_dashboard/ENV/
+stitch_remix_of_ai_calling_dashboard/build/
+stitch_remix_of_ai_calling_dashboard/dist/
+stitch_remix_of_ai_calling_dashboard/.eggs/
+stitch_remix_of_ai_calling_dashboard/*.egg-info/
+stitch_remix_of_ai_calling_dashboard/pip-wheel-metadata/
+stitch_remix_of_ai_calling_dashboard/.pytest_cache/
+stitch_remix_of_ai_calling_dashboard/.mypy_cache/
+stitch_remix_of_ai_calling_dashboard/.ruff_cache/
+stitch_remix_of_ai_calling_dashboard/.coverage
+stitch_remix_of_ai_calling_dashboard/.coverage.*
+stitch_remix_of_ai_calling_dashboard/htmlcov/
+stitch_remix_of_ai_calling_dashboard/instance/
+stitch_remix_of_ai_calling_dashboard/*.db
+stitch_remix_of_ai_calling_dashboard/*.sqlite3
+stitch_remix_of_ai_calling_dashboard/uploads/*
+!stitch_remix_of_ai_calling_dashboard/uploads/.gitkeep

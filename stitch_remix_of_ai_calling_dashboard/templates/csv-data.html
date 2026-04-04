@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
+    <div>
+        <span class="text-primary font-bold text-xs uppercase tracking-widest mb-3 block">Data Management</span>
+        <h2 class="text-4xl font-headline font-bold text-on-surface tracking-tight">Import Call Batches</h2>
+        <p class="text-on-surface-variant mt-2 max-w-lg">Transform your contact lists into active AI voice campaigns. Upload, verify, and initiate resonant connections instantly.</p>
+        <p class="text-xs text-secondary mt-2">Source: {{ csv_data_data.data_source }}</p>
+    </div>
+    <div class="flex gap-3">
+        <button class="bg-surface-container-lowest border border-outline-variant/20 px-6 py-3 rounded-xl text-sm font-semibold flex items-center gap-2 hover:bg-surface-container-low transition-colors">
+            <span class="material-symbols-outlined text-lg">download</span> Download Template
+        </button>
+    </div>
+</div>
+<div class="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div class="lg:col-span-4 bg-surface-container-lowest rounded-[2rem] p-8 flex flex-col justify-between group cursor-pointer hover:bg-surface-container-low transition-all duration-300" id="upload-zone" data-dragover="false">
+        <div>
+            <div class="w-14 h-14 rounded-2xl bg-primary/5 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                <span class="material-symbols-outlined text-primary text-3xl">cloud_upload</span>
+            </div>
+            <h3 class="text-xl font-headline font-semibold mb-2">Drop your file</h3>
+            <p class="text-sm text-on-surface-variant leading-relaxed">Limit 50MB per file. Supports .csv, .xlsx, and .json formats with proper structure.</p>
+        </div>
+        <div class="mt-12">
+            <div class="border-2 border-dashed border-outline-variant/30 rounded-2xl p-6 text-center group-hover:border-primary/40 transition-colors">
+                <span class="text-xs font-bold text-secondary uppercase">Click or Drag File</span>
+            </div>
+        </div>
+        <input type="file" id="file-input" class="hidden" accept=".csv,.xlsx,.json" />
+    </div>
+    <div class="lg:col-span-8 grid grid-cols-2 gap-6">
+        <div class="bg-surface-container-low rounded-[2rem] p-8 flex flex-col justify-between">
+            <div class="flex justify-between items-start">
+                <span class="text-xs font-bold text-secondary uppercase">Active Leads</span>
+                <span class="material-symbols-outlined text-primary">trending_up</span>
+            </div>
+            <div>
+                <p class="text-5xl font-headline font-bold tracking-tighter">{{ csv_data_data.active_leads }}</p>
+                <p class="text-sm text-on-surface-variant mt-2">Rows available in primary output source</p>
+            </div>
+        </div>
+        <div class="bg-surface-container-lowest rounded-[2rem] p-8 flex flex-col justify-between">
+            <div class="flex justify-between items-start">
+                <span class="text-xs font-bold text-secondary uppercase">Valid Records</span>
+                <span class="material-symbols-outlined text-primary-container">verified</span>
+            </div>
+            <div>
+                <p class="text-5xl font-headline font-bold tracking-tighter">{{ csv_data_data.valid_records_rate }}%</p>
+                <p class="text-sm text-on-surface-variant mt-2">{{ csv_data_data.valid_records }} rows with captured answers</p>
+            </div>
+        </div>
+        <div class="col-span-2 bg-primary text-white rounded-[2rem] p-8 flex items-center justify-between overflow-hidden relative group">
+            <div class="relative z-10">
+                <h3 class="text-2xl font-headline font-bold mb-2">Ready to scale?</h3>
+                <p class="text-white/80 text-sm max-w-xs">Start your batch calling campaign now and process {{ csv_data_data.active_leads }} records from the latest output source.</p>
+            </div>
+            <button class="relative z-10 bg-white text-primary px-8 py-4 rounded-2xl font-bold hover:scale-105 active:scale-95 transition-all">Start Batch Calling</button>
+            <div class="absolute right-0 top-0 w-64 h-64 signature-gradient opacity-20 blur-3xl rounded-full translate-x-1/2 -translate-y-1/2"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function initializeUploadHandlers() {
+        // File upload handling
+        const uploadZone = document.getElementById('upload-zone');
+        const fileInput = document.getElementById('file-input');
+
+        if (!uploadZone || !fileInput) return; // Exit if elements don't exist
+
+        // Remove previous event listeners by cloning
+        const newUploadZone = uploadZone.cloneNode(true);
+        uploadZone.parentNode.replaceChild(newUploadZone, uploadZone);
+
+        const newFileInput = document.getElementById('file-input');
+
+        // Click to upload
+        newUploadZone.addEventListener('click', () => newFileInput.click());
+
+        // File input change
+        newFileInput.addEventListener('change', (e) => {
+            const files = e.target.files;
+            if (files.length > 0) {
+                handleFileUpload(files[0]);
+            }
+        });
+
+        // Drag and drop events
+        newUploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            newUploadZone.classList.add('bg-primary/5', 'border-primary/40');
+        });
+
+        newUploadZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            newUploadZone.classList.remove('bg-primary/5', 'border-primary/40');
+        });
+
+        newUploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            newUploadZone.classList.remove('bg-primary/5', 'border-primary/40');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileUpload(files[0]);
+            }
+        });
+    }
+
+    // Initialize when page loads or is injected
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeUploadHandlers);
+    } else {
+        initializeUploadHandlers();
+    }
+
+    async function handleFileUpload(file) {
+        const maxSize = 50 * 1024 * 1024; // 50MB
+        const validTypes = ['text/csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/json'];
+        const validExtensions = ['.csv', '.xlsx', '.json'];
+        
+        // Validate file size
+        if (file.size > maxSize) {
+            showNotification('File size exceeds 50MB limit', 'error');
+            return;
+        }
+
+        // Validate file type
+        const hasValidType = validTypes.includes(file.type) || file.type === '';
+        const hasValidExtension = validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+        
+        if (!hasValidType && !hasValidExtension) {
+            showNotification('Invalid file format. Please upload .csv, .xlsx, or .json', 'error');
+            return;
+        }
+
+        // Determine file type
+        const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+        
+        if (fileExtension === '.json') {
+            await handleJsonFile(file);
+        } else {
+            showNotification(`${file.name} uploaded successfully!`, 'success');
+        }
+
+        // Save file to backend
+        await saveFileToUploads(file);
+    }
+
+    async function saveFileToUploads(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const response = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error('Server upload failed');
+            }
+
+            const result = await response.json();
+            
+            // Log upload to localStorage
+            logUploadHistory({
+                fileName: file.name,
+                fileSize: file.size,
+                fileType: file.type,
+                uploadedAt: new Date().toISOString(),
+                status: 'success',
+                serverPath: result.filePath
+            });
+
+        } catch (error) {
+            console.warn('Backend not available, saving to local history:', error);
+            
+            // Fallback: save to localStorage
+            logUploadHistory({
+                fileName: file.name,
+                fileSize: file.size,
+                fileType: file.type,
+                uploadedAt: new Date().toISOString(),
+                status: 'local_only'
+            });
+        }
+    }
+
+    function logUploadHistory(uploadData) {
+        try {
+            let uploadHistory = JSON.parse(localStorage.getItem('uploadHistory') || '[]');
+            uploadHistory.unshift(uploadData);
+            
+            // Keep only last 50 uploads
+            uploadHistory = uploadHistory.slice(0, 50);
+            localStorage.setItem('uploadHistory', JSON.stringify(uploadHistory));
+            
+            console.log('Upload logged:', uploadData);
+        } catch (error) {
+            console.error('Error logging upload:', error);
+        }
+    }
+
+    async function handleJsonFile(file) {
+        try {
+            const text = await file.text();
+            const jsonData = JSON.parse(text);
+            
+            // Validate JSON structure
+            if (!Array.isArray(jsonData) && typeof jsonData !== 'object') {
+                showNotification('JSON must be an array or object', 'error');
+                return;
+            }
+
+            // If it's an object, check if it might be a single record or has a data array
+            let records = Array.isArray(jsonData) ? jsonData : [jsonData];
+            
+            if (records.length === 0) {
+                showNotification('JSON file contains no records', 'error');
+                return;
+            }
+
+            showNotification(`${file.name} processed successfully! Found ${records.length} record(s)`, 'success');
+            updateFilePreview(file.name, '.json', records);
+        } catch (error) {
+            showNotification(`Invalid JSON file: ${error.message}`, 'error');
+        }
+    }
+
+    function updateFilePreview(fileName, fileType, data = null) {
+        // You can add logic here to display preview of uploaded file
+        console.log(`File uploaded: ${fileName}`, fileType, data);
+    }
+
+    function showNotification(message, type = 'success') {
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = `fixed bottom-10 right-10 z-50 px-6 py-4 rounded-2xl shadow-2xl text-white font-bold text-sm flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 transition-all`;
+        
+        if (type === 'success') {
+            notification.classList.add('bg-primary');
+            notification.innerHTML = '<span class="material-symbols-outlined">check_circle</span>' + message;
+        } else if (type === 'error') {
+            notification.classList.add('bg-error');
+            notification.innerHTML = '<span class="material-symbols-outlined">error</span>' + message;
+        }
+        
+        document.body.appendChild(notification);
+        
+        // Auto remove after 4 seconds
+        setTimeout(() => {
+            notification.remove();
+        }, 4000);
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,361 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="mb-8 flex items-start justify-between gap-6">
+        <div>
+            <h2 class="text-3xl font-bold font-headline text-on-surface">Data-Driven Dashboard</h2>
+            <p class="text-sm text-on-surface-variant mt-2">Source: <span class="font-semibold">{{ dashboard_data.data_source }}</span></p>
+        </div>
+    </div>
+
+    {% if dashboard_data.has_data %}
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-5 mb-8">
+        <div class="bg-surface-container-lowest p-5 rounded-2xl">
+            <p class="text-secondary text-xs font-semibold uppercase tracking-wider mb-2">Total Called</p>
+            <h3 class="text-3xl font-bold font-headline">{{ dashboard_data.total_records }}</h3>
+        </div>
+        <div class="bg-surface-container-lowest p-5 rounded-2xl">
+            <p class="text-secondary text-xs font-semibold uppercase tracking-wider mb-2">Opted Out</p>
+            <h3 class="text-3xl font-bold font-headline">{{ dashboard_data.opted_out_count }}</h3>
+            <p class="text-xs text-on-surface-variant mt-1">{{ dashboard_data.opted_out_rate }}%</p>
+        </div>
+        <div class="bg-surface-container-lowest p-5 rounded-2xl">
+            <p class="text-secondary text-xs font-semibold uppercase tracking-wider mb-2">Connected Calls</p>
+            <h3 class="text-3xl font-bold font-headline">{{ dashboard_data.connected_count }}</h3>
+            <p class="text-xs text-on-surface-variant mt-1">{{ dashboard_data.connected_rate }}%</p>
+        </div>
+        <div class="bg-surface-container-lowest p-5 rounded-2xl">
+            <p class="text-secondary text-xs font-semibold uppercase tracking-wider mb-2">Average Duration</p>
+            <h3 class="text-3xl font-bold font-headline">{{ dashboard_data.avg_duration }}</h3>
+        </div>
+        <div class="bg-primary text-white p-5 rounded-2xl">
+            <p class="text-white/80 text-xs font-semibold uppercase tracking-wider mb-2">Top Outcome</p>
+            <h3 class="text-2xl font-bold font-headline">{{ dashboard_data.top_outcome }}</h3>
+        </div>
+    </div>
+
+    <div class="bg-surface-container-lowest rounded-2xl p-6 mb-8">
+        <h3 class="text-lg font-bold font-headline mb-3">Analytical Insights</h3>
+        <ul class="space-y-2 text-sm text-on-surface-variant">
+            {% for insight in dashboard_data.insights %}
+            <li class="flex items-start gap-2">
+                <span class="material-symbols-outlined text-primary text-base">insights</span>
+                <span>{{ insight }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
+        <div class="bg-surface-container-lowest rounded-2xl p-6">
+            <h3 class="font-headline font-bold text-lg mb-4">Outcome Distribution</h3>
+            <div class="h-72"><canvas id="outcomePieChart"></canvas></div>
+        </div>
+        <div class="bg-surface-container-lowest rounded-2xl p-6">
+            <h3 class="font-headline font-bold text-lg mb-4">Call Direction Split</h3>
+            <div class="h-72"><canvas id="directionDonutChart"></canvas></div>
+        </div>
+        <div class="bg-surface-container-lowest rounded-2xl p-6">
+            <h3 class="font-headline font-bold text-lg mb-4">Duration Buckets</h3>
+            <div class="h-72"><canvas id="durationBarChart"></canvas></div>
+        </div>
+    </div>
+
+    <div class="mt-12">
+        <div class="mb-10 flex items-end justify-between gap-4 flex-wrap">
+            <div>
+                <h2 class="text-4xl font-headline font-bold text-on-surface tracking-tight mb-2">Transcripts</h2>
+                <p class="text-on-surface-variant font-medium opacity-80">
+                    Last 5 transcripts from <span id="transcripts-source">{{ transcripts_data.data_source if transcripts_data.data_source else 'n/a' }}</span>.
+                </p>
+            </div>
+            <div class="flex items-center gap-2 px-4 py-2 bg-surface-container-lowest text-sm font-semibold rounded-lg shadow-sm border border-outline-variant/10 text-on-surface-variant">
+                <span class="material-symbols-outlined text-sm">dataset</span>
+                <span id="transcripts-row-count-label">{{ transcripts_data.rows|length }} row{{ '' if transcripts_data.rows|length == 1 else 's' }}</span>
+            </div>
+        </div>
+
+        <div class="bg-surface-container-low rounded-[2rem] p-4 overflow-hidden">
+            <div class="bg-surface-container-lowest rounded-[1.5rem] overflow-hidden">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-surface-variant/30">
+                            <th class="px-8 py-5 text-[11px] font-bold text-secondary uppercase tracking-widest">outcome</th>
+                            <th class="px-8 py-5 text-[11px] font-bold text-secondary uppercase tracking-widest">call_duration</th>
+                            <th class="px-8 py-5 text-[11px] font-bold text-secondary uppercase tracking-widest">direction</th>
+                            <th class="px-8 py-5 text-[11px] font-bold text-secondary uppercase tracking-widest">transcript</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transcripts-table-body" class="divide-y divide-surface-variant/10">
+                        {% if transcripts_data.rows %}
+                            {% for row in transcripts_data.rows %}
+                            <tr class="hover:bg-surface-container-low/50 transition-colors">
+                                <td class="px-8 py-5 text-sm text-on-surface">{{ row.outcome }}</td>
+                                <td class="px-8 py-5 text-sm text-on-surface">{{ row.call_duration }}</td>
+                                <td class="px-8 py-5 text-sm text-on-surface">{{ row.direction }}</td>
+                                <td class="px-8 py-5 text-sm text-on-surface-variant max-w-xl">
+                                    {% if row.has_more %}
+                                    <span class="transcript-short whitespace-pre-line">{{ row.transcript_short | replace(' [AGENT]:', '\n[AGENT]:') | replace(' [USER]:', '\n[USER]:') }}</span>
+                                    <span class="transcript-full hidden whitespace-pre-line">{{ row.transcript_full | replace(' [AGENT]:', '\n[AGENT]:') | replace(' [USER]:', '\n[USER]:') }}</span>
+                                    <button type="button" class="transcript-toggle text-primary font-semibold ml-2">Read more</button>
+                                    {% else %}
+                                    <span class="whitespace-pre-line">{{ row.transcript | replace(' [AGENT]:', '\n[AGENT]:') | replace(' [USER]:', '\n[USER]:') }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="4" class="px-8 py-8 text-center text-sm text-on-surface-variant">
+                                    No transcript data found. Showing n/a until data is available.
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="bg-surface-container-lowest rounded-2xl p-10 border border-outline-variant/20">
+        <h3 class="text-2xl font-headline font-bold mb-2">No dataset available</h3>
+        <p class="text-on-surface-variant">Upload a CSV or JSON file from the CSV Data tab, or place result.json in the project fallback location.</p>
+        <p class="text-sm text-secondary mt-3">{{ dashboard_data.data_source }}</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+{% if dashboard_data.has_data %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script id="dashboard-chart-data" type="application/json">{{ dashboard_data.charts | tojson }}</script>
+<script>
+    const chartData = JSON.parse(
+        document.getElementById('dashboard-chart-data').textContent || '{}'
+    );
+    const expandedTranscriptKeys = new Set();
+
+    function createPieChart(canvasId, labels, values) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        new Chart(canvas, {
+            type: 'pie',
+            data: {
+                labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: ['#006e1c', '#4caf50', '#a63360', '#f59e0b', '#64748b', '#dc2626'],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' }
+                }
+            }
+        });
+    }
+
+    function createDonutChart(canvasId, labels, values) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        new Chart(canvas, {
+            type: 'doughnut',
+            data: {
+                labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: ['#006e1c', '#0ea5e9', '#94a3b8'],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '58%',
+                plugins: {
+                    legend: { position: 'bottom' }
+                }
+            }
+        });
+    }
+
+    function createBarChart(canvasId, labels, values) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Calls',
+                    data: values,
+                    backgroundColor: '#006e1c'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { precision: 0 }
+                    }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+    }
+
+    createPieChart(
+        'outcomePieChart',
+        chartData.outcome_distribution.labels,
+        chartData.outcome_distribution.values
+    );
+
+    createDonutChart(
+        'directionDonutChart',
+        chartData.direction_distribution.labels,
+        chartData.direction_distribution.values
+    );
+
+    createBarChart(
+        'durationBarChart',
+        chartData.duration_distribution.labels,
+        chartData.duration_distribution.values
+    );
+
+    function escapeHtml(text) {
+        return String(text ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function renderTranscriptRows(rows) {
+        const tbody = document.getElementById('transcripts-table-body');
+        if (!tbody) return;
+
+        if (!rows || rows.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="4" class="px-8 py-8 text-center text-sm text-on-surface-variant">
+                        No transcript data found. Showing n/a until data is available.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        const transcriptRowKey = (row) => {
+            return [
+                row?.outcome ?? '',
+                row?.call_duration ?? '',
+                row?.direction ?? '',
+                row?.transcript_full ?? row?.transcript ?? ''
+            ].join('|');
+        };
+
+        const formatTranscriptDisplay = (text) => {
+            const raw = String(text ?? '');
+            return raw
+                .replace(/\s*\[AGENT\]:/g, '\n[AGENT]:')
+                .replace(/\s*\[USER\]:/g, '\n[USER]:')
+                .trim();
+        };
+
+        const renderTranscriptCell = (row) => {
+            const rowKey = transcriptRowKey(row);
+            const isExpanded = expandedTranscriptKeys.has(rowKey);
+
+            if (!row?.has_more) {
+                return `<span class="whitespace-pre-line">${escapeHtml(formatTranscriptDisplay(row?.transcript ?? 'n/a'))}</span>`;
+            }
+            return `
+                <span class="transcript-short whitespace-pre-line ${isExpanded ? 'hidden' : ''}">${escapeHtml(formatTranscriptDisplay(row?.transcript_short ?? ''))}</span>
+                <span class="transcript-full whitespace-pre-line ${isExpanded ? '' : 'hidden'}">${escapeHtml(formatTranscriptDisplay(row?.transcript_full ?? ''))}</span>
+                <button type="button" class="transcript-toggle text-primary font-semibold ml-2" data-transcript-key="${escapeHtml(rowKey)}">${isExpanded ? 'Read less' : 'Read more'}</button>
+            `;
+        };
+
+        tbody.innerHTML = rows.map((row) => `
+            <tr class="hover:bg-surface-container-low/50 transition-colors">
+                <td class="px-8 py-5 text-sm text-on-surface">${escapeHtml(row.outcome)}</td>
+                <td class="px-8 py-5 text-sm text-on-surface">${escapeHtml(row.call_duration)}</td>
+                <td class="px-8 py-5 text-sm text-on-surface">${escapeHtml(row.direction)}</td>
+                <td class="px-8 py-5 text-sm text-on-surface-variant max-w-xl">${renderTranscriptCell(row)}</td>
+            </tr>
+        `).join('');
+    }
+
+    document.addEventListener('click', (event) => {
+        const button = event.target.closest('.transcript-toggle');
+        if (!button) return;
+
+        const cell = button.closest('td');
+        if (!cell) return;
+
+        const shortEl = cell.querySelector('.transcript-short');
+        const fullEl = cell.querySelector('.transcript-full');
+        if (!shortEl || !fullEl) return;
+
+        const rowKey = button.getAttribute('data-transcript-key') || '';
+
+        const isExpanded = !fullEl.classList.contains('hidden');
+        if (isExpanded) {
+            fullEl.classList.add('hidden');
+            shortEl.classList.remove('hidden');
+            button.textContent = 'Read more';
+            if (rowKey) {
+                expandedTranscriptKeys.delete(rowKey);
+            }
+        } else {
+            fullEl.classList.remove('hidden');
+            shortEl.classList.add('hidden');
+            button.textContent = 'Read less';
+            if (rowKey) {
+                expandedTranscriptKeys.add(rowKey);
+            }
+        }
+    });
+
+    function renderTranscriptMeta(data) {
+        const sourceEl = document.getElementById('transcripts-source');
+        const countEl = document.getElementById('transcripts-row-count-label');
+        const rows = Array.isArray(data?.rows) ? data.rows : [];
+
+        if (sourceEl) {
+            sourceEl.textContent = data?.data_source || 'n/a';
+        }
+        if (countEl) {
+            const count = rows.length;
+            countEl.textContent = `${count} row${count === 1 ? '' : 's'}`;
+        }
+        renderTranscriptRows(rows);
+    }
+
+    async function refreshTranscriptsSection() {
+        try {
+            const response = await fetch(`/api/transcripts-data?ts=${Date.now()}`, { cache: 'no-store' });
+            if (!response.ok) return;
+            const payload = await response.json();
+            if (!payload || !payload.success) return;
+            renderTranscriptMeta(payload.data || {});
+        } catch (error) {
+            console.warn('Transcript refresh failed:', error);
+        }
+    }
+
+    setInterval(refreshTranscriptsSection, 5000);
+
+</script>
+{% endif %}
+{% endblock %}

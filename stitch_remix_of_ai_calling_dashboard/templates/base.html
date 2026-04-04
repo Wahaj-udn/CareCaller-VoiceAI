@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>CareCaller Admin - Voice Ops Center</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-lowest": "#ffffff",
+                        "surface-bright": "#fcf9f8",
+                        "on-surface": "#1c1b1b",
+                        "surface-dim": "#dcd9d9",
+                        "secondary-container": "#dcdddd",
+                        "on-error": "#ffffff",
+                        "inverse-surface": "#313030",
+                        "secondary": "#5d5f5f",
+                        "tertiary-fixed-dim": "#ffb1c7",
+                        "primary-fixed": "#94f990",
+                        "primary": "#006e1c",
+                        "outline-variant": "#becab9",
+                        "tertiary": "#a63360",
+                        "on-secondary-fixed-variant": "#454747",
+                        "on-primary": "#ffffff",
+                        "on-secondary-container": "#5f6161",
+                        "error-container": "#ffdad6",
+                        "tertiary-fixed": "#ffd9e2",
+                        "surface": "#fcf9f8",
+                        "primary-container": "#4caf50",
+                        "on-secondary": "#ffffff",
+                        "inverse-on-surface": "#f3f0ef",
+                        "error": "#ba1a1a",
+                        "surface-container-high": "#ebe7e7",
+                        "background": "#fcf9f8",
+                        "surface-container-low": "#f6f3f2",
+                        "surface-tint": "#006e1c",
+                        "secondary-fixed": "#e2e2e2",
+                        "on-tertiary": "#ffffff",
+                        "inverse-primary": "#78dc77",
+                        "outline": "#6f7a6b",
+                        "on-primary-fixed": "#002204",
+                        "on-secondary-fixed": "#1a1c1c",
+                        "on-background": "#1c1b1b",
+                        "on-tertiary-fixed": "#3e001c",
+                        "on-primary-fixed-variant": "#005313",
+                        "surface-container": "#f0edec",
+                        "secondary-fixed-dim": "#c6c6c7",
+                        "on-tertiary-fixed-variant": "#861948",
+                        "surface-variant": "#e5e2e1",
+                        "surface-container-highest": "#e5e2e1",
+                        "on-error-container": "#93000a",
+                        "on-surface-variant": "#3f4a3c",
+                        "tertiary-container": "#f26f9d",
+                        "on-tertiary-container": "#690034",
+                        "primary-fixed-dim": "#78dc77",
+                        "on-primary-container": "#003c0b"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    }
+                },
+            },
+        }
+    </script>
+    <style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body { font-family: 'Inter', sans-serif; }
+        h1, h2, h3, .font-headline { font-family: 'Manrope', sans-serif; }
+        .glass-nav { backdrop-filter: blur(24px); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .voice-pulse {
+            position: relative;
+        }
+        .voice-pulse::after {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: #006e1c;
+            opacity: 0.2;
+            z-index: -1;
+            transform: scale(1.4);
+        }
+        .signature-gradient {
+            background: linear-gradient(135deg, #006e1c 0%, #4caf50 100%);
+        }
+        .sidebar-nav a { transition: all 0.3s ease; }
+    </style>
+</head>
+<body class="bg-surface text-on-surface antialiased">
+<!-- SideNavBar Shell -->
+<aside class="fixed left-0 top-0 h-full flex flex-col h-screen w-64 border-r-0 bg-slate-50 dark:bg-zinc-900 z-50 overflow-y-auto">
+    <div class="px-6 py-8">
+        <div class="flex items-center gap-3 mb-10">
+            <div class="w-8 h-8 bg-gradient-to-br from-primary to-primary-container rounded-lg flex items-center justify-center">
+                <span class="material-symbols-outlined text-white text-sm" style="font-variation-settings: 'FILL' 1;">graphic_eq</span>
+            </div>
+            <div>
+                <h1 class="font-bold text-green-800 dark:text-green-400 font-headline text-lg leading-tight">CareCaller Admin</h1>
+                <p class="text-xs text-secondary font-medium">Voice Ops Center</p>
+            </div>
+        </div>
+        <nav class="space-y-1 sidebar-nav">
+            <a href="/dashboard" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-manrope text-sm font-medium {% if current_page == 'dashboard' %}bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 font-semibold scale-95{% else %}text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800{% endif %}" data-page="dashboard">
+                <span class="material-symbols-outlined">dashboard</span>
+                <span>Dashboard</span>
+            </a>
+            <a href="/live-calls" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-manrope text-sm font-medium {% if current_page == 'live-calls' %}bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 font-semibold scale-95{% else %}text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800{% endif %}" data-page="live-calls">
+                <span class="material-symbols-outlined">settings_phone</span>
+                <span>Live Calls</span>
+            </a>
+        </nav>
+    </div>
+    <div class="mt-auto px-6 py-8 border-t border-zinc-100/50">
+        <div class="flex items-center gap-3">
+            <img alt="Admin User Avatar" class="w-10 h-10 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBnVxynJPkK526isCgyf-IJlgd0yUOUojnJYjcNrupouUiqbGj8a6UcJ9Gyz545BbOXvJNl7EteyPIUTLXBLfjcLPh5oL2ZdoBRpm2EBHvmsXGhLvOpEWzX8OBC2c8dPbbrbtBBwdHsLKPUNyS8l8o7GPo63lbGA2_yNV5gosn7uPUXMI5j-hoCf8L-rNHyiy5oaMfZepW7GxS4gKWw4t0JEYM5c6O98i3XlaVH5_rt5_AEgeWbT2qdfB_zAz7vPV4GfbgwwpT58Dw"/>
+            <div>
+                <p class="text-sm font-semibold text-on-surface">Alex Rivera</p>
+                <p class="text-[10px] uppercase tracking-wider text-secondary font-bold">Systems Lead</p>
+            </div>
+        </div>
+    </div>
+</aside>
+
+<!-- TopNavBar Shell -->
+<header class="flex items-center justify-between px-8 py-4 ml-64 full-width top-0 sticky bg-white/80 dark:bg-zinc-950/80 backdrop-blur-xl shadow-sm dark:shadow-none z-40">
+    <div class="flex items-center gap-6 flex-1">
+        <div class="relative w-full max-w-md">
+            <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-sm">search</span>
+            <input class="w-full pl-10 pr-4 py-2 bg-surface-container-high border-none rounded-xl text-sm focus:ring-2 focus:ring-primary/20 placeholder:text-secondary/60" placeholder="Search callers, transcripts, or logs..." type="text"/>
+        </div>
+    </div>
+    <div class="flex items-center gap-4">
+        <button id="nav-upload-btn" class="px-5 py-2.5 rounded-xl text-sm font-semibold text-secondary hover:opacity-80 transition-opacity">Upload CSV</button>
+        <input type="file" id="nav-upload-input" class="hidden" accept=".csv,.xlsx,.json" />
+        <button class="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-br from-primary to-primary-container shadow-md hover:opacity-90 transition-opacity">Start Calling</button>
+        <div class="flex items-center gap-2 ml-2 border-l border-outline-variant/20 pl-4">
+            <button class="p-2 text-secondary hover:bg-surface-variant/50 rounded-lg transition-colors">
+                <span class="material-symbols-outlined">account_circle</span>
+            </button>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content Canvas -->
+<main class="ml-64 p-10 min-h-screen" id="content-area">
+    {% block content %}{% endblock %}
+</main>
+<script>
+    (function initializeGlobalUpload() {
+        const uploadButton = document.getElementById('nav-upload-btn');
+        const fileInput = document.getElementById('nav-upload-input');
+        const maxSize = 50 * 1024 * 1024;
+        const validExtensions = ['.csv', '.xlsx', '.json'];
+
+        if (!uploadButton || !fileInput) {
+            return;
+        }
+
+        function notify(message, type = 'success') {
+            const notification = document.createElement('div');
+            notification.className = 'fixed bottom-10 right-10 z-50 px-6 py-4 rounded-2xl shadow-2xl text-white font-bold text-sm flex items-center gap-3';
+
+            if (type === 'error') {
+                notification.classList.add('bg-error');
+                notification.innerHTML = '<span class="material-symbols-outlined">error</span>' + message;
+            } else {
+                notification.classList.add('bg-primary');
+                notification.innerHTML = '<span class="material-symbols-outlined">check_circle</span>' + message;
+            }
+
+            document.body.appendChild(notification);
+            setTimeout(() => notification.remove(), 4000);
+        }
+
+        function isValidFile(file) {
+            if (!file) return false;
+
+            if (file.size > maxSize) {
+                notify('File size exceeds 50MB limit', 'error');
+                return false;
+            }
+
+            const fileName = (file.name || '').toLowerCase();
+            const hasValidExtension = validExtensions.some((ext) => fileName.endsWith(ext));
+            if (!hasValidExtension) {
+                notify('Invalid file format. Please upload .csv, .xlsx, or .json', 'error');
+                return false;
+            }
+
+            return true;
+        }
+
+        async function uploadSelectedFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(payload.error || 'Server upload failed');
+                }
+
+                notify(file.name + ' uploaded successfully!', 'success');
+            } catch (error) {
+                notify('Upload failed: ' + error.message, 'error');
+            }
+        }
+
+        uploadButton.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', async (event) => {
+            const file = event.target.files && event.target.files[0];
+            if (!isValidFile(file)) {
+                fileInput.value = '';
+                return;
+            }
+
+            await uploadSelectedFile(file);
+            fileInput.value = '';
+        });
+    })();
+</script>
+{% block page_scripts %}{% endblock %}
+</body>
+</html>
