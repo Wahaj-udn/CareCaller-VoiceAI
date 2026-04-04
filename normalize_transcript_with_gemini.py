@@ -297,6 +297,21 @@ RULES for self-answer detection:
     - Question/confirmation/recap -> usually [AGENT]
     - Value/report/symptom answer -> usually [USER]
 
+9. Normalize spoken numbers to digits (USER lines only):
+   - Convert textual numbers to digits ONLY when they are answers to
+     numeric fields (weight, height, pounds lost, goal weight, dosage).
+   - Examples:
+     "one eighty" → "180"
+     "five nine" → "5'9\""
+     "six feet two" → "6'2\""
+     "around two hundred and twelve pounds" → "around 212 pounds"
+     "maybe one fifty" → "maybe 150"
+   - Preserve ALL surrounding words exactly as spoken — only the number
+     itself changes.
+   - Do NOT normalize numbers in non-numeric answers (e.g., "I had three
+     surgeries" stays as-is — "three" is not a measured field value).
+   - Do NOT normalize AGENT lines — only USER responses to numeric questions.
+   - If the number is ambiguous or unclear in context, leave it as-is.
 ----------------------------------------
 OUTPUT FORMAT (STRICT)
 ----------------------------------------

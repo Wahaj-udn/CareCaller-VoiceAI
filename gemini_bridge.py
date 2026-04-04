@@ -180,6 +180,8 @@ class BridgeService:
                 "If the caller speaks another language, politely ask to continue in English."
             )
 
+        voice_name = os.getenv("GEMINI_VOICE_NAME", "").strip()
+
         config = {
             "response_modalities": ["AUDIO"],
             "system_instruction": system_instruction,
@@ -191,6 +193,15 @@ class BridgeService:
                 }
             },
         }
+
+        if voice_name:
+            config["speech_config"] = {
+                "voice_config": {
+                    "prebuilt_voice_config": {
+                        "voice_name": voice_name,
+                    }
+                }
+            }
 
         async with self._client.aio.live.connect(model=self._model, config=config) as session:
             twilio_to_gemini_task = asyncio.create_task(

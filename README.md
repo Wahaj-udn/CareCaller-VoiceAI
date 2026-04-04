@@ -44,6 +44,7 @@ It is designed to be both conversational for users and deterministic for data pi
 - `normalized_transcript/*.normalized.txt` -> deterministic cleaned transcript
 - `qa_json/*.qa.json` -> 14-question extracted answers
 - `result.json` -> aggregated final dataset
+- `output.csv` -> patient_checkin schema populated with latest mapped QA answers
 
 ## Additional documentation
 - `PROJECT_RETROSPECTIVE.md`: detailed project journey, issues faced, and solutions.
@@ -104,6 +105,9 @@ It is designed to be both conversational for users and deterministic for data pi
 - `AUTO_SAVE_QA_JSON` (default: `true`, extracts canonical Q&A JSON from normalized transcript)
 - `QA_JSON_DIR` (default: `qa_json`)
 - `AUTO_UPDATE_RESULT_JSON` (default: `true`, appends/refreshes `result.json` after each processed call)
+- `AUTO_UPDATE_OUTPUT_CSV` (default: `true`, refreshes `output.csv` after each processed call)
+- `INPUT_PATIENT_CSV` (default: `patient_checkin.csv`, source schema/rows for `output.csv`)
+- `OUTPUT_CSV_FILE` (default: `output.csv`)
 - `CONVERSATION_DIR` (default: `conversation`)
 - `CONVERSATION_PER_CALL` (default: `true`, creates one transcript file per call)
 
@@ -193,6 +197,16 @@ final transcript into `normalized_transcript/`.
 - Controlled by:
 	- `AUTO_UPDATE_RESULT_JSON=true`
 - First run behavior: if `.result_build_state.json` is absent/corrupt, the builder initializes state from currently existing `normalized_transcript/*.normalized.txt` files (no historical backfill on that run).
+
+## Automatic patient output CSV update (`output.csv`)
+- After each processed call, the pipeline can automatically regenerate `output.csv` from:
+	- `patient_checkin.csv` (or `INPUT_PATIENT_CSV`)
+	- latest mapped `qa_json/*.qa.json`
+	- call metadata inferred from `conversation/*.txt`
+- Controlled by:
+	- `AUTO_UPDATE_OUTPUT_CSV=true`
+	- `INPUT_PATIENT_CSV=patient_checkin.csv`
+	- `OUTPUT_CSV_FILE=output.csv`
 
 ## Bridge behavior in `gemini_bridge.py`
 - Receives Twilio μ-law 8k audio

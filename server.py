@@ -90,7 +90,10 @@ def _start_transcription_job(app: Flask, recording_file: Path) -> None:
         auto_normalize_final = _is_truthy(os.getenv("AUTO_NORMALIZE_TRANSCRIPT", "true"))
         auto_save_qa_json = _is_truthy(os.getenv("AUTO_SAVE_QA_JSON", "true"))
         auto_update_result_json = _is_truthy(os.getenv("AUTO_UPDATE_RESULT_JSON", "true"))
+        auto_update_output_csv = _is_truthy(os.getenv("AUTO_UPDATE_OUTPUT_CSV", "true"))
         normalizer_model = os.getenv("TRANSCRIPT_NORMALIZER_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+        input_patient_csv = Path(os.getenv("INPUT_PATIENT_CSV", "patient_checkin.csv"))
+        output_csv_file = Path(os.getenv("OUTPUT_CSV_FILE", "output.csv"))
 
         try:
             transcript_path = transcribe_recording_file(
@@ -147,6 +150,25 @@ def _start_transcription_job(app: Flask, recording_file: Path) -> None:
                                 app.logger.info("Updated result.json after call processing")
                             except Exception as update_exc:
                                 app.logger.error("Failed to update result.json: %s", update_exc)
+
+                        if auto_update_output_csv:
+                            try:
+                                import build_output_csv
+
+                                summary = build_output_csv.build_output_csv(
+                                    input_csv=input_patient_csv,
+                                    qa_dir=qa_json_dir,
+                                    conversation_dir=conversation_dir,
+                                    output_csv=output_csv_file,
+                                )
+                                app.logger.info(
+                                    "Updated %s after call processing (rows=%s rows_filled=%s)",
+                                    output_csv_file,
+                                    summary.get("rows"),
+                                    summary.get("rows_filled"),
+                                )
+                            except Exception as output_exc:
+                                app.logger.error("Failed to update output CSV: %s", output_exc)
         except Exception as exc:
             app.logger.error("Whisper transcription failed for %s: %s", recording_file, exc)
 
@@ -258,7 +280,7 @@ def _build_voice_twiml(stream_label: str) -> Response:
     row_index = (request.values.get("row_index") or "").strip()
 
     response.say(
-        "Hi, this is Carecaller. We are connecting you to our AI interviewer now.",
+        "Hi, this is Carecaller. We are connecting you to our AI assistant now.",
         voice="alice",
     )
 
