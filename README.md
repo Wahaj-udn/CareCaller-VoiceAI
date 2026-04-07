@@ -10,6 +10,11 @@ Most healthcare call systems either: sound robotic, or generate messy, unusable 
 This project aims to bridges that gap:
 Natural conversations in → clean structured insights out
 
+<img width="1901" height="1199" alt="image" src="https://github.com/user-attachments/assets/4c58ad3e-3917-400a-a328-92a0caa42597" />
+<img width="1900" height="1199" alt="image" src="https://github.com/user-attachments/assets/05b5d7c4-af7d-4127-8318-dcc471a50964" />
+<img width="1899" height="1199" alt="image" src="https://github.com/user-attachments/assets/48b6d15b-e0ca-4c5d-826f-8f20895fa19d" />
+<img width="1901" height="1199" alt="image" src="https://github.com/user-attachments/assets/90ec9536-316c-4f2f-b48d-4efe83bbde6e" />
+
 ## High-level overview
 
 ### Purpose
@@ -73,7 +78,7 @@ It is designed to be both conversational for users and deterministic for data pi
 - `TWILIO_AUTH_TOKEN`
 - `GEMINI_API_KEY`
 
-## Optional environment variables
+## Other environment variables
 - `MEDIA_STREAM_URL` (required for calls, points to your bridge websocket)
 - `GEMINI_MODEL` (default: `gemini-3.1-flash-live-preview`)
 - `MISSION_PROMPT` (initial mission/system prompt for Gemini)
