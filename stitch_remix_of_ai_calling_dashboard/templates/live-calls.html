@@ -7,14 +7,14 @@
             <h2 class="font-headline text-4xl font-bold text-on-surface leading-tight tracking-tight">Active Call</h2>
             <div class="flex items-center gap-3 mt-2">
                 <span class="flex items-center gap-1.5 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">
-                    <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span> {{ live_calls_data.status_label }}
+                    <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span> <span id="live-status-label">{{ live_calls_data.status_label }}</span>
                 </span>
-                <span class="text-sm text-secondary">Started: {{ live_calls_data.started_at }}</span>
+                <span class="text-sm text-secondary">Started: <span id="live-started-at">{{ live_calls_data.started_at }}</span></span>
             </div>
         </div>
         <div class="flex items-center gap-2 bg-surface-container-low px-6 py-3 rounded-2xl shadow-sm">
             <span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">timer</span>
-            <span class="font-headline font-bold text-2xl tracking-tighter text-on-surface">{{ live_calls_data.duration_text }}</span>
+            <span id="live-duration" class="font-headline font-bold text-2xl tracking-tighter text-on-surface">{{ live_calls_data.duration_text }}</span>
         </div>
     </div>
     <div class="grid grid-cols-12 gap-8 flex-1">
@@ -31,7 +31,7 @@
                 </div>
                 <button class="material-symbols-outlined text-secondary hover:text-error transition-colors">backspace</button>
             </div>
-            <div class="flex-1 p-8 space-y-6 overflow-y-auto">
+            <div id="live-transcript-list" class="flex-1 p-8 space-y-6 overflow-y-auto">
                 {% if live_calls_data.messages %}
                     {% for msg in live_calls_data.messages %}
                         {% if msg.role_kind == 'agent' %}
@@ -44,7 +44,7 @@
                         {% else %}
                         <div class="flex flex-col items-end max-w-[85%] ml-auto">
                             <div class="bg-surface-container text-on-surface p-5 rounded-2xl rounded-tr-none shadow-sm">
-                                <p class="text-base leading-relaxed font-body">{{ msg.message }}</p>
+                                <p class="text-base leading-relaxed font-body">{% if msg.is_current_user %}User responding...{% else %}User responded.{% endif %}</p>
                             </div>
                             <span class="text-[10px] mt-2 mr-1 text-secondary font-medium">{{ msg.role_label }} • {{ msg.time_label }}</span>
                         </div>
@@ -59,18 +59,6 @@
                 </div>
                 {% endif %}
             </div>
-            <div class="p-6 bg-surface-container-low/50 backdrop-blur-md">
-                <div class="flex items-center justify-between gap-4 bg-surface-container-lowest rounded-2xl p-4 shadow-sm">
-                    <div class="flex items-center gap-3">
-                        <span class="material-symbols-outlined text-secondary">info</span>
-                        <p class="text-sm text-on-surface-variant font-medium">Manual text override is disabled during live calls.</p>
-                    </div>
-                    <button class="bg-primary text-white px-4 h-11 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-primary/20 text-sm font-semibold">
-                        <span class="material-symbols-outlined" style="font-size:18px;">play_arrow</span>
-                        Use Script
-                    </button>
-                </div>
-            </div>
         </section>
         <aside class="col-span-12 lg:col-span-5 flex flex-col gap-8">
             <div class="bg-primary p-1 rounded-[2rem]">
@@ -83,9 +71,9 @@
                         <div class="w-12 h-12 rounded-2xl bg-primary-container/10 flex items-center justify-center text-primary shrink-0">
                             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">medical_services</span>
                         </div>
-                        <div>
-                            <p class="font-headline font-bold text-xl text-on-surface">{{ live_calls_data.objective_title }}</p>
-                            <p class="text-on-surface-variant text-sm mt-1 leading-relaxed">{{ live_calls_data.objective_detail }}</p>
+                        <div class="min-w-0 w-full">
+                            <p id="live-objective-title" class="font-headline font-bold text-xl text-on-surface break-words">{{ live_calls_data.objective_title }}</p>
+                            <p id="live-objective-detail" class="text-on-surface-variant text-sm mt-1 leading-relaxed break-all whitespace-normal">{{ live_calls_data.objective_detail }}</p>
                         </div>
                     </div>
                     <div class="mt-8 flex gap-2">
@@ -94,16 +82,193 @@
                         <div class="h-1.5 flex-1 bg-surface-container-highest rounded-full"></div>
                         <div class="h-1.5 flex-1 bg-surface-container-highest rounded-full"></div>
                     </div>
-                    <p class="text-center text-[10px] font-bold text-secondary mt-4 tracking-widest uppercase">Active calls: {{ live_calls_data.active_calls }}</p>
+                    <p id="live-active-calls" class="text-center text-[10px] font-bold text-secondary mt-4 tracking-widest uppercase">Active calls: {{ live_calls_data.active_calls }}</p>
                 </div>
-            </div>
-            <div class="mt-auto pt-6 flex gap-3">
-                <button class="flex-1 py-4 px-6 rounded-2xl bg-surface-container-highest text-on-surface font-headline font-bold text-sm hover:bg-secondary-container transition-colors">Mute Agent</button>
-                <button class="flex-[2] py-4 px-6 rounded-2xl bg-error/10 text-error font-headline font-bold text-sm hover:bg-error hover:text-white transition-all flex items-center justify-center gap-2">
-                    <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">call_end</span> End Call Now
-                </button>
             </div>
         </aside>
     </div>
 </div>
+{% endblock %}
+
+{% block page_scripts %}
+<script id="live-call-init" type="application/json">{{ {'call_id': live_calls_data.call_id} | tojson }}</script>
+<script>
+    const liveInitData = JSON.parse(document.getElementById('live-call-init')?.textContent || '{}');
+    let liveCallId = liveInitData.call_id ?? null;
+    let typingTimer = null;
+    let lastTypedAgentMessageId = null;
+    let lastTranscriptSignature = null;
+
+    const transcriptListEl = document.getElementById('live-transcript-list');
+    const statusEl = document.getElementById('live-status-label');
+    const startedEl = document.getElementById('live-started-at');
+    const durationEl = document.getElementById('live-duration');
+    const objectiveTitleEl = document.getElementById('live-objective-title');
+    const objectiveDetailEl = document.getElementById('live-objective-detail');
+    const activeCallsEl = document.getElementById('live-active-calls');
+
+    function escapeHtml(text) {
+        return String(text ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function renderAgentBubble(msg, index) {
+        return `
+            <div class="flex flex-col items-start max-w-[85%]" data-msg-id="${msg.id ?? index}">
+                <div class="bg-[#E8F5E9] text-on-surface-variant p-5 rounded-2xl rounded-tl-none shadow-sm">
+                    <p class="text-base leading-relaxed font-body live-agent-text">${escapeHtml(msg.message || '')}</p>
+                </div>
+                <span class="text-[10px] mt-2 ml-1 text-secondary font-medium">Agent • ${escapeHtml(msg.time_label || `#${index + 1}`)}</span>
+            </div>
+        `;
+    }
+
+    function renderUserBubble(msg, index) {
+        const userText = msg.is_current_user ? 'User responding...' : 'User responded.';
+        return `
+            <div class="flex flex-col items-end max-w-[85%] ml-auto" data-msg-id="${msg.id ?? index}">
+                <div class="bg-surface-container text-on-surface p-5 rounded-2xl rounded-tr-none shadow-sm">
+                    <p class="text-base leading-relaxed font-body">${escapeHtml(userText)}</p>
+                </div>
+                <span class="text-[10px] mt-2 mr-1 text-secondary font-medium">User • ${escapeHtml(msg.time_label || `#${index + 1}`)}</span>
+            </div>
+        `;
+    }
+
+    function renderEmptyLiveState() {
+        if (!transcriptListEl) return;
+        transcriptListEl.innerHTML = `
+            <div class="flex flex-col items-start max-w-[85%]">
+                <div class="bg-[#E8F5E9] text-on-surface-variant p-5 rounded-2xl rounded-tl-none shadow-sm">
+                    <p class="text-base leading-relaxed font-body">No live transcript messages are currently available.</p>
+                </div>
+                <span class="text-[10px] mt-2 ml-1 text-secondary font-medium">System • n/a</span>
+            </div>
+        `;
+    }
+
+    function transcriptSignature(messages) {
+        if (!Array.isArray(messages) || messages.length === 0) {
+            return '__empty__';
+        }
+        return messages
+            .map((msg, idx) => [
+                msg?.id ?? idx,
+                msg?.role_kind ?? '',
+                msg?.message ?? '',
+                msg?.is_current_user ? '1' : '0',
+            ].join('|'))
+            .join('||');
+    }
+
+    function typeLatestAgentMessage(messages) {
+        if (!messages || messages.length === 0 || !transcriptListEl) return;
+
+        let latestAgent = null;
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i].role_kind === 'agent') {
+                latestAgent = messages[i];
+                break;
+            }
+        }
+        if (!latestAgent) return;
+
+        const msgId = String(latestAgent.id ?? '');
+        if (!msgId || msgId === String(lastTypedAgentMessageId)) return;
+
+        const targetRow = transcriptListEl.querySelector(`[data-msg-id="${msgId}"]`);
+        const targetTextEl = targetRow?.querySelector('.live-agent-text');
+        if (!targetTextEl) return;
+
+        if (typingTimer) {
+            clearInterval(typingTimer);
+            typingTimer = null;
+        }
+
+        const fullText = latestAgent.message || '';
+        let idx = 0;
+        targetTextEl.textContent = '';
+
+        typingTimer = setInterval(() => {
+            idx += 1;
+            targetTextEl.textContent = fullText.slice(0, idx);
+            if (idx >= fullText.length) {
+                clearInterval(typingTimer);
+                typingTimer = null;
+                lastTypedAgentMessageId = msgId;
+            }
+        }, 18);
+    }
+
+    function renderLiveData(data) {
+        const messages = Array.isArray(data?.messages) ? data.messages : [];
+        const nextSignature = transcriptSignature(messages);
+
+        if (statusEl) statusEl.textContent = data?.status_label || 'No Active Call';
+        if (startedEl) startedEl.textContent = data?.started_at || 'n/a';
+        if (durationEl) durationEl.textContent = data?.duration_text || 'n/a';
+        if (objectiveTitleEl) objectiveTitleEl.textContent = data?.objective_title || 'Live call monitoring';
+        if (objectiveDetailEl) objectiveDetailEl.textContent = data?.objective_detail || 'No active conversation found.';
+        if (activeCallsEl) activeCallsEl.textContent = `Active calls: ${data?.active_calls ?? 0}`;
+
+        if (!transcriptListEl) return;
+
+        if (messages.length === 0) {
+            if (lastTranscriptSignature !== '__empty__') {
+                renderEmptyLiveState();
+                lastTranscriptSignature = '__empty__';
+            }
+            return;
+        }
+
+        if (nextSignature === lastTranscriptSignature) {
+            return;
+        }
+
+        transcriptListEl.innerHTML = messages.map((msg, index) => {
+            if (msg.role_kind === 'agent') return renderAgentBubble(msg, index);
+            return renderUserBubble(msg, index);
+        }).join('');
+
+        lastTranscriptSignature = nextSignature;
+        typeLatestAgentMessage(messages);
+        transcriptListEl.scrollTop = transcriptListEl.scrollHeight;
+    }
+
+    function resetLiveCallState() {
+        lastTypedAgentMessageId = null;
+        lastTranscriptSignature = null;
+        if (typingTimer) {
+            clearInterval(typingTimer);
+            typingTimer = null;
+        }
+    }
+
+    async function refreshLiveCalls() {
+        try {
+            const response = await fetch(`/api/live-calls-data?ts=${Date.now()}`, { cache: 'no-store' });
+            if (!response.ok) return;
+            const payload = await response.json();
+            if (!payload?.success) return;
+
+            const data = payload.data || {};
+            const nextCallId = data.call_id || null;
+            if (nextCallId !== liveCallId) {
+                liveCallId = nextCallId;
+                resetLiveCallState();
+            }
+
+            renderLiveData(data);
+        } catch (error) {
+            console.warn('Live calls refresh failed:', error);
+        }
+    }
+
+    refreshLiveCalls();
+    setInterval(refreshLiveCalls, 2000);
+</script>
 {% endblock %}

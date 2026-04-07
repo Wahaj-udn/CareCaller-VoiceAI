@@ -125,14 +125,18 @@
                 <span class="material-symbols-outlined">settings_phone</span>
                 <span>Live Calls</span>
             </a>
+            <a href="/csv-data" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-manrope text-sm font-medium {% if current_page == 'csv-data' %}bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 font-semibold scale-95{% else %}text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800{% endif %}" data-page="csv-data">
+                <span class="material-symbols-outlined">table_chart</span>
+                <span>CSV Data</span>
+            </a>
         </nav>
     </div>
     <div class="mt-auto px-6 py-8 border-t border-zinc-100/50">
         <div class="flex items-center gap-3">
             <img alt="Admin User Avatar" class="w-10 h-10 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBnVxynJPkK526isCgyf-IJlgd0yUOUojnJYjcNrupouUiqbGj8a6UcJ9Gyz545BbOXvJNl7EteyPIUTLXBLfjcLPh5oL2ZdoBRpm2EBHvmsXGhLvOpEWzX8OBC2c8dPbbrbtBBwdHsLKPUNyS8l8o7GPo63lbGA2_yNV5gosn7uPUXMI5j-hoCf8L-rNHyiy5oaMfZepW7GxS4gKWw4t0JEYM5c6O98i3XlaVH5_rt5_AEgeWbT2qdfB_zAz7vPV4GfbgwwpT58Dw"/>
             <div>
-                <p class="text-sm font-semibold text-on-surface">Alex Rivera</p>
-                <p class="text-[10px] uppercase tracking-wider text-secondary font-bold">Systems Lead</p>
+                <p class="text-sm font-semibold text-on-surface">Mohammad Wahaj</p>
+                <p class="text-[10px] uppercase tracking-wider text-secondary font-bold">Admin</p>
             </div>
         </div>
     </div>
@@ -149,7 +153,7 @@
     <div class="flex items-center gap-4">
         <button id="nav-upload-btn" class="px-5 py-2.5 rounded-xl text-sm font-semibold text-secondary hover:opacity-80 transition-opacity">Upload CSV</button>
         <input type="file" id="nav-upload-input" class="hidden" accept=".csv,.xlsx,.json" />
-        <button class="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-br from-primary to-primary-container shadow-md hover:opacity-90 transition-opacity">Start Calling</button>
+    <button id="nav-start-calling-btn" class="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-br from-primary to-primary-container shadow-md hover:opacity-90 transition-opacity">Start Calling</button>
         <div class="flex items-center gap-2 ml-2 border-l border-outline-variant/20 pl-4">
             <button class="p-2 text-secondary hover:bg-surface-variant/50 rounded-lg transition-colors">
                 <span class="material-symbols-outlined">account_circle</span>
@@ -166,10 +170,11 @@
     (function initializeGlobalUpload() {
         const uploadButton = document.getElementById('nav-upload-btn');
         const fileInput = document.getElementById('nav-upload-input');
+        const startCallingButton = document.getElementById('nav-start-calling-btn');
         const maxSize = 50 * 1024 * 1024;
         const validExtensions = ['.csv', '.xlsx', '.json'];
 
-        if (!uploadButton || !fileInput) {
+        if (!uploadButton || !fileInput || !startCallingButton) {
             return;
         }
 
@@ -229,6 +234,34 @@
         }
 
         uploadButton.addEventListener('click', () => fileInput.click());
+
+        startCallingButton.addEventListener('click', async () => {
+            const originalLabel = startCallingButton.textContent;
+            startCallingButton.disabled = true;
+            startCallingButton.classList.add('opacity-70', 'cursor-not-allowed');
+            startCallingButton.textContent = 'Starting...';
+
+            try {
+                const response = await fetch('/api/start-calling', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ csv_file: 'patient_checkin.csv' })
+                });
+
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || !payload.success) {
+                    throw new Error(payload.error || payload.message || 'Unable to start calling process');
+                }
+
+                notify('Calling started with patient_checkin.csv', 'success');
+            } catch (error) {
+                notify('Start calling failed: ' + error.message, 'error');
+            } finally {
+                startCallingButton.disabled = false;
+                startCallingButton.classList.remove('opacity-70', 'cursor-not-allowed');
+                startCallingButton.textContent = originalLabel;
+            }
+        });
 
         fileInput.addEventListener('change', async (event) => {
             const file = event.target.files && event.target.files[0];

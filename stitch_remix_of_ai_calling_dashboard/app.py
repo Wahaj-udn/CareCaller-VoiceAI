@@ -6,10 +6,14 @@ A complete Flask app serving the dashboard with file upload functionality
 
 from flask import Flask, render_template, request, jsonify, send_file, redirect
 from flask_cors import CORS
+import importlib.util
 import os
 import json
 import csv
 import re
+import subprocess
+import sys
+import time
 from pathlib import Path
 from werkzeug.utils import secure_filename
 from datetime import datetime
@@ -30,6 +34,11 @@ ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'json'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 RESULT_JSON_FALLBACK = os.path.join(PROJECT_ROOT, 'result.json')
 OUTPUT_CSV_PRIMARY = os.getenv('OUTPUT_CSV_PATH', os.path.join(PROJECT_ROOT, 'output.csv'))
+LIVE_CONVERSATION_DIR = Path(os.getenv('LIVE_CONVERSATION_DIR', os.path.join(PROJECT_ROOT, 'conversation')))
+DASHBOARD_AUTO_SYNC_OUTPUT_CSV = os.getenv('DASHBOARD_AUTO_SYNC_OUTPUT_CSV', 'true').strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
+CALL_CSV_SCRIPT = Path(os.getenv('CALL_CSV_SCRIPT', os.path.join(PROJECT_ROOT, 'call_csv.py')))
+CALL_CSV_INPUT_FILE = os.getenv('CALL_CSV_INPUT_FILE', 'patient_checkin.csv')
+CALL_CSV_LOG_FILE = Path(os.getenv('CALL_CSV_LOG_FILE', os.path.join(PROJECT_ROOT, 'logs', 'call_csv_last.log')))
 
 HEALTH_OUTPUT_COLUMNS = [
     'Overall Feeling',
@@ -59,6 +68,36 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
+
+
+_LAST_OUTPUT_SYNC_CHECK_TS = 0.0
+_LAST_OUTPUT_SYNC_SIGNATURE = None
+_LAST_CALL_CSV_PID = None
+
+
+def _resolve_call_csv_python() -> Path:
+    configured = os.getenv('CALL_CSV_PYTHON', '').strip()
+    if configured:
+        path = Path(configured)
+        if not path.is_absolute():
+            path = Path(PROJECT_ROOT) / path
+        return path
+
+    root_venv_python = Path(PROJECT_ROOT) / 'venv' / 'Scripts' / 'python.exe'
+    if root_venv_python.exists():
+        return root_venv_python
+
+    return Path(sys.executable)
+
+
+def _tail_text_file(path: Path, max_chars: int = 1200) -> str:
+    try:
+        text = path.read_text(encoding='utf-8', errors='ignore')
+    except Exception:
+        return ''
+    if len(text) <= max_chars:
+        return text
+    return text[-max_chars:]
 
 
 def _default_dashboard_context(message='No CSV/JSON file found'):
@@ -106,12 +145,17 @@ def _default_csv_data_context(message='No output.csv data found'):
         'active_leads': 0,
         'valid_records': 0,
         'valid_records_rate': 0.0,
+        'columns': [],
+        'rows_preview': [],
+        'total_rows': 0,
+        'displayed_rows': 0,
     }
 
 
 def _default_live_calls_context(message='No live call data available'):
     return {
         'has_data': False,
+        'call_id': None,
         'data_source': message,
         'active_calls': 0,
         'status_label': 'No Active Call',
@@ -132,12 +176,212 @@ def _existing_path(*candidates):
     return None
 
 
+def _resolved_output_csv_path() -> Path:
+    configured = Path(OUTPUT_CSV_PRIMARY)
+    if configured.is_absolute():
+        return configured
+    return Path(PROJECT_ROOT) / configured
+
+
+def _load_build_output_csv_module():
+    """Load build_output_csv reliably regardless of current working directory."""
+    try:
+        import build_output_csv as module  # type: ignore
+        return module
+    except Exception:
+        pass
+
+    module_path = Path(PROJECT_ROOT) / 'build_output_csv.py'
+    if not module_path.exists():
+        return None
+
+    spec = importlib.util.spec_from_file_location('build_output_csv_dynamic', str(module_path))
+    if spec is None or spec.loader is None:
+        return None
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _primary_output_csv_file():
+    _maybe_sync_output_csv_with_backend()
     return _existing_path(
-        OUTPUT_CSV_PRIMARY,
+        str(_resolved_output_csv_path()),
         os.path.join(PROJECT_ROOT, 'output.csv'),
         os.path.join(BASE_DIR, 'output.csv'),
     )
+
+
+def _maybe_sync_output_csv_with_backend():
+    """Keep output.csv up to date with backend source files (result.json + call artifacts)."""
+    global _LAST_OUTPUT_SYNC_CHECK_TS, _LAST_OUTPUT_SYNC_SIGNATURE
+
+    if not DASHBOARD_AUTO_SYNC_OUTPUT_CSV:
+        return
+
+    now_ts = datetime.utcnow().timestamp()
+    if now_ts - _LAST_OUTPUT_SYNC_CHECK_TS < 2.0:
+        return
+    _LAST_OUTPUT_SYNC_CHECK_TS = now_ts
+
+    input_csv = Path(os.path.join(PROJECT_ROOT, 'patient_checkin.csv'))
+    qa_dir = Path(os.path.join(PROJECT_ROOT, 'qa_json'))
+    conversation_dir = Path(os.path.join(PROJECT_ROOT, 'conversation'))
+    output_csv = _resolved_output_csv_path()
+    result_json = Path(RESULT_JSON_FALLBACK)
+
+    if not input_csv.exists() or not result_json.exists():
+        return
+
+    output_mtime = output_csv.stat().st_mtime if output_csv.exists() else 0.0
+    result_mtime = result_json.stat().st_mtime
+
+    should_sync = (not output_csv.exists()) or (result_mtime > output_mtime)
+    if not should_sync:
+        return
+
+    sync_signature = (float(result_mtime), float(output_mtime))
+    if _LAST_OUTPUT_SYNC_SIGNATURE == sync_signature:
+        return
+
+    try:
+        build_output_csv = _load_build_output_csv_module()
+        if build_output_csv is None:
+            raise RuntimeError('Unable to load build_output_csv.py from project root')
+
+        summary = build_output_csv.build_output_csv(
+            input_csv=input_csv,
+            qa_dir=qa_dir,
+            conversation_dir=conversation_dir,
+            output_csv=output_csv,
+            result_json=result_json,
+        )
+        _LAST_OUTPUT_SYNC_SIGNATURE = sync_signature
+        app.logger.info(
+            "Synced output.csv from backend data (rows=%s, rows_filled=%s)",
+            summary.get('rows'),
+            summary.get('rows_filled'),
+        )
+    except Exception as exc:
+        app.logger.error("Failed syncing output.csv with backend data: %s", exc)
+
+
+def _extract_call_id_from_filename(path: Path) -> str | None:
+    stem = path.stem
+    if '_' in stem:
+        return stem.split('_')[-1]
+    return stem or None
+
+
+def _parse_start_dt_from_filename(path: Path) -> datetime | None:
+    stem = path.stem
+    timestamp_part = stem.split('_', 1)[0]
+    try:
+        return datetime.strptime(timestamp_part, '%Y%m%dT%H%M%SZ')
+    except Exception:
+        return None
+
+
+def _latest_conversation_file() -> Path | None:
+    if not LIVE_CONVERSATION_DIR.exists():
+        return None
+
+    candidates = [
+        p for p in LIVE_CONVERSATION_DIR.glob('*.txt')
+        if p.is_file() and p.name != '.gitkeep'
+    ]
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return candidates[0]
+
+
+def _parse_live_conversation_messages(path: Path) -> list[dict]:
+    try:
+        lines = path.read_text(encoding='utf-8', errors='ignore').splitlines()
+    except Exception:
+        return []
+
+    messages: list[dict] = []
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+
+        match = re.match(r'^(?:\[[^\]]+\]\s*)?(agent|user)>(.*)$', line, re.IGNORECASE)
+        if not match:
+            continue
+
+        role = match.group(1).strip().lower()
+        message_text = match.group(2).strip()
+        if not message_text:
+            continue
+
+        messages.append({
+            'role': role,
+            'raw_message': message_text,
+        })
+
+    return messages
+
+
+def _live_call_context_from_conversation() -> dict | None:
+    convo_file = _latest_conversation_file()
+    if convo_file is None:
+        return None
+
+    start_dt = _parse_start_dt_from_filename(convo_file)
+    call_id = _extract_call_id_from_filename(convo_file)
+    parsed_messages = _parse_live_conversation_messages(convo_file)
+
+    last_user_idx = None
+    for i, msg in enumerate(parsed_messages):
+        if msg.get('role') == 'user':
+            last_user_idx = i
+
+    messages: list[dict] = []
+    for i, msg in enumerate(parsed_messages[-20:], start=max(0, len(parsed_messages) - 20)):
+        role = msg.get('role', 'agent')
+        if role == 'agent':
+            messages.append({
+                'id': i,
+                'role_label': 'Agent',
+                'role_kind': 'agent',
+                'message': msg.get('raw_message', ''),
+                'time_label': f'#{i + 1}',
+            })
+        else:
+            is_current_user = (last_user_idx == i)
+            messages.append({
+                'id': i,
+                'role_label': 'User',
+                'role_kind': 'user',
+                'message': 'User responding...' if is_current_user else 'User responded.',
+                'time_label': f'#{i + 1}',
+                'is_current_user': is_current_user,
+            })
+
+    if start_dt is not None:
+        started_at = start_dt.strftime('%b %d, %Y %I:%M %p')
+        duration_text = _format_duration(max(0, int((datetime.utcnow() - start_dt).total_seconds())))
+    else:
+        started_at = datetime.fromtimestamp(convo_file.stat().st_mtime).strftime('%b %d, %Y %I:%M %p')
+        duration_text = 'n/a'
+
+    return {
+        'has_data': True,
+        'call_id': call_id,
+        'data_source': convo_file.name,
+        'active_calls': 1,
+        'status_label': 'Ongoing',
+        'started_at': started_at,
+        'duration_text': duration_text,
+        'messages': messages,
+        'objective_title': 'Live Gemini bridge transcript',
+        'objective_detail': f'Source: {convo_file.name}',
+    }
 
 def allowed_file(filename):
     """Check if file extension is allowed"""
@@ -695,6 +939,10 @@ def get_csv_data_context():
             'active_leads': 0,
             'valid_records': 0,
             'valid_records_rate': 0.0,
+            'columns': [],
+            'rows_preview': [],
+            'total_rows': 0,
+            'displayed_rows': 0,
         }
 
     valid_records = 0
@@ -709,16 +957,58 @@ def get_csv_data_context():
 
     valid_rate = round((valid_records / total) * 100, 1) if total else 0.0
 
+    columns = []
+    if rows and isinstance(rows[0], dict):
+        columns = list(rows[0].keys())
+
+    preview_limit = 100
+    rows_preview = []
+    for row in rows[:preview_limit]:
+        if not isinstance(row, dict):
+            continue
+        clean_row = {}
+        for key in columns:
+            value = row.get(key, '')
+            clean_row[key] = '' if value is None else str(value)
+        rows_preview.append(clean_row)
+
     return {
         'has_data': True,
         'data_source': os.path.basename(source_path),
         'active_leads': total,
         'valid_records': valid_records,
         'valid_records_rate': valid_rate,
+        'columns': columns,
+        'rows_preview': rows_preview,
+        'total_rows': total,
+        'displayed_rows': len(rows_preview),
     }
 
 
+@app.route('/api/csv-data', methods=['GET'])
+def csv_data_api():
+    """Return CSV panel data sourced from output.csv."""
+    data = get_csv_data_context()
+    source_path = _primary_output_csv_file()
+    file_mtime = None
+    if source_path:
+        try:
+            file_mtime = datetime.fromtimestamp(os.path.getmtime(source_path)).isoformat()
+        except OSError:
+            file_mtime = None
+
+    return jsonify({
+        'success': True,
+        'data': data,
+        'file_mtime': file_mtime,
+    }), 200
+
+
 def get_live_calls_context():
+    live_context = _live_call_context_from_conversation()
+    if live_context is not None:
+        return live_context
+
     source_path = _latest_json_file() or _existing_path(RESULT_JSON_FALLBACK)
     if source_path is None:
         return _default_live_calls_context('No JSON call data found')
@@ -765,6 +1055,7 @@ def get_live_calls_context():
 
     return {
         'has_data': True,
+        'call_id': None,
         'data_source': os.path.basename(source_path),
         'active_calls': len(active),
         'status_label': 'Ongoing' if status_kind == 'ongoing' else str(status).replace('_', ' ').title(),
@@ -857,6 +1148,107 @@ def transcripts_page():
     return redirect('/dashboard')
 
 # ==================== API ROUTES ====================
+
+@app.route('/api/live-calls-data', methods=['GET'])
+def live_calls_data_api():
+    """Return live-calls panel data, preferring active conversation logs."""
+    data = get_live_calls_context()
+    return jsonify({
+        'success': True,
+        'data': data,
+        'generated_at': datetime.utcnow().isoformat(),
+    }), 200
+
+
+@app.route('/api/start-calling', methods=['POST'])
+def start_calling_api():
+    """Launch call_csv.py using the same interpreter (venv-aware) in background."""
+    global _LAST_CALL_CSV_PID
+
+    script_path = CALL_CSV_SCRIPT
+    if not script_path.is_absolute():
+        script_path = Path(PROJECT_ROOT) / script_path
+
+    csv_file = CALL_CSV_INPUT_FILE
+    payload = request.get_json(silent=True) or {}
+    if isinstance(payload, dict) and payload.get('csv_file'):
+        csv_file = str(payload.get('csv_file'))
+
+    csv_path = Path(csv_file)
+    if not csv_path.is_absolute():
+        csv_path = Path(PROJECT_ROOT) / csv_path
+
+    if not script_path.exists():
+        return jsonify({
+            'success': False,
+            'error': f'call script not found: {script_path}'
+        }), 404
+
+    if not csv_path.exists():
+        return jsonify({
+            'success': False,
+            'error': f'CSV file not found: {csv_path}'
+        }), 404
+
+    python_executable = _resolve_call_csv_python()
+    if not python_executable.exists():
+        return jsonify({
+            'success': False,
+            'error': f'Python interpreter not found: {python_executable}'
+        }), 404
+
+    command = [str(python_executable), str(script_path), '--csv-file', str(csv_path)]
+
+    try:
+        CALL_CSV_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        log_file_handle = open(CALL_CSV_LOG_FILE, 'w', encoding='utf-8')
+
+        proc = subprocess.Popen(
+            command,
+            cwd=PROJECT_ROOT,
+            stdout=log_file_handle,
+            stderr=log_file_handle,
+            stdin=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0),
+        )
+
+        # Give process a brief moment to fail fast and surface useful errors.
+        time.sleep(1.0)
+        exit_code = proc.poll()
+        if exit_code is not None and exit_code != 0:
+            log_file_handle.flush()
+            log_file_handle.close()
+            error_tail = _tail_text_file(CALL_CSV_LOG_FILE) or 'No output captured.'
+            return jsonify({
+                'success': False,
+                'error': 'call_csv.py exited immediately',
+                'exit_code': exit_code,
+                'python': str(python_executable),
+                'script': str(script_path),
+                'csv_file': str(csv_path),
+                'log_file': str(CALL_CSV_LOG_FILE),
+                'log_tail': error_tail,
+            }), 500
+
+        # Parent keeps its own handle; child keeps writing to same file.
+        log_file_handle.close()
+        _LAST_CALL_CSV_PID = proc.pid
+        app.logger.info('Started call_csv.py (pid=%s) using interpreter=%s', proc.pid, python_executable)
+        return jsonify({
+            'success': True,
+            'message': 'Calling job started',
+            'pid': proc.pid,
+            'python': str(python_executable),
+            'script': str(script_path),
+            'csv_file': str(csv_path),
+            'log_file': str(CALL_CSV_LOG_FILE),
+        }), 202
+    except Exception as exc:
+        app.logger.error('Failed to start calling job: %s', exc)
+        return jsonify({
+            'success': False,
+            'error': f'Failed to start calling job: {exc}'
+        }), 500
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
